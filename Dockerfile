@@ -22,9 +22,10 @@ RUN git clone https://github.com/tdlib/td.git \
     && cmake -DCMAKE_BUILD_TYPE=Release .. \
     && cmake --build . --target install
 
-COPY config_site.h /
-COPY pj_threadname.patch /
-COPY pj_cpp1z.patch /
+
+COPY buildenv/config_site.h /
+COPY buildenv/pj_threadname.patch /
+COPY buildenv/pj_cpp1z.patch /
 
 RUN git clone https://github.com/pjsip/pjproject.git \
     && cd pjproject \
@@ -53,7 +54,7 @@ RUN cd src \
     && cmake -DCMAKE_BUILD_TYPE=Release .. \
     && cmake --build .
 
-FROM ubuntu:bionic
+FROM debian:stretch
 
 RUN apt-get update \
 	&& apt-get install -y --no-install-recommends \
