@@ -1,15 +1,15 @@
-FROM debian:stretch as builder
+FROM debian:sid as builder
 
 RUN apt-get update \
 	&& apt-get install -y --no-install-recommends \
 		build-essential git \
 		wget ca-certificates \
 		pkg-config libopus-dev libssl-dev \
-		zlib1g-dev gperf ccache \
+		zlib1g-dev gperf ccache cmake \
 	&& rm -rf /var/lib/apt/lists/*
 
-RUN wget https://cmake.org/files/v3.9/cmake-3.9.6-Linux-x86_64.sh \
-    && sh cmake-3.9.6-Linux-x86_64.sh --prefix=/usr --exclude-subdir
+#RUN wget https://cmake.org/files/v3.9/cmake-3.9.6-Linux-x86_64.sh \
+#    && sh cmake-3.9.6-Linux-x86_64.sh --prefix=/usr --exclude-subdir
 
 COPY tdlib_header.patch /
 COPY tdlib_threadname.patch /
@@ -47,25 +47,26 @@ RUN git clone -n https://github.com/gabime/spdlog.git \
     && rm -rf spdlog
 
 
-#COPY . /src
 RUN git clone https://github.com/D4rk4/tg2sip.git \
     && cd tg2sip \
-    && mkdir build \
-    && cd build \
-    && cmake -DCMAKE_BUILD_TYPE=Release .. \
+    && mkdir build    \
+    && cd build    \
+    && cmake -DCMAKE_BUILD_TYPE=Release ..  \
     && cmake --build .
+
+RUN ldd /tg2sip/build/tg2sip
 
 FROM debian:stretch
 
 RUN apt-get update \
 	&& apt-get install -y --no-install-recommends \
-		libopus0 \
+		libopus0 libssl1.1\
 	&& rm -rf /var/lib/apt/lists/*
 
 WORKDIR /gateway
 
-COPY --from=builder /tg2sip/tg2sip .
-COPY --from=builder /tg2sip/gen_db .
-COPY --from=builder /tg2sip/settings.ini .
+COPY --from=builder /tg2sip/build/tg2sip .
+COPY --from=builder /tg2sip/build/gen_db .
+COPY --from=builder /tg2sip/build/settings.ini .
 
-CMD ./tg2sip
+ENTRYPOINT ./tg2sip

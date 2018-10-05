@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.9)
 project(tg2sip)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 17) 
 
 add_subdirectory(libtgvoip)
 
@@ -11,6 +11,8 @@ find_package(Td 1.2.0 REQUIRED)
 find_package(spdlog 0.17 REQUIRED)
 pkg_check_modules(PJSIP libpjproject>=2.8 REQUIRED)
 pkg_check_modules(OPUS opus REQUIRED)
+
+
 
 add_executable(tg2sip
         tg2sip/main.cpp
