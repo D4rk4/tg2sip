@@ -1,4 +1,4 @@
-FROM debian:stretch
+FROM debian:stretch as builder
 
 RUN apt-get update \
 	&& apt-get install -y --no-install-recommends \
@@ -45,3 +45,27 @@ RUN git clone -n https://github.com/gabime/spdlog.git \
     && cmake --build . --target install \
     && cd / \
     && rm -rf spdlog
+
+
+#COPY . /src
+RUN git clone https://github.com/D4rk4/tg2sip.git \
+    && cd tg2sip \
+    && mkdir build \
+    && cd build \
+    && cmake -DCMAKE_BUILD_TYPE=Release .. \
+    && cmake --build .
+
+FROM debian:stretch
+
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends \
+		libopus0 \
+	&& rm -rf /var/lib/apt/lists/*
+
+WORKDIR /gateway
+
+COPY --from=builder /tg2sip/tg2sip .
+COPY --from=builder /tg2sip/gen_db .
+COPY --from=builder /tg2sip/settings.ini .
+
+CMD ./tg2sip
