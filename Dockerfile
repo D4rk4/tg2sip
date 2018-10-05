@@ -11,7 +11,7 @@ RUN apt-get update \
 RUN wget https://cmake.org/files/v3.9/cmake-3.9.6-Linux-x86_64.sh \
     && sh cmake-3.9.6-Linux-x86_64.sh --prefix=/usr --exclude-subdir
 
-COPY tdlib_header.patch /
+COPY buildenv/tdlib_header.patch /
 
 RUN git clone https://github.com/tdlib/td.git \
     && cd td \
