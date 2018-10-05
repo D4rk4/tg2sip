@@ -1,4 +1,4 @@
-[![Build status](https://ci.appveyor.com/api/projects/status/4dnph34apvfy6vft?svg=true)](https://ci.appveyor.com/project/Infactum/tg2sip)
+[![Build status](https://ci.appveyor.com/api/projects/status/sc1566e4y1o8jtaf?svg=true)](https://ci.appveyor.com/project/D4rk4/tg2sip)
 
 # TG2SIP
 
