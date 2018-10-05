@@ -1,7 +1,7 @@
 version: 1.0.0+{build}
 
 image:
-  - Ubuntu
+  - Debian
 
 configuration: Release
 
@@ -34,11 +34,11 @@ build_script:
         chmod +x gen_db;
         cp tg2sip /src/build;
         cp gen_db /src/build;"      
-      7z a tg2sip.zip ./build/tg2sip ./build/gen_db ./settings.ini;
+      7z a tg2sip-debian.zip ./build/tg2sip ./build/gen_db ./settings.ini;
 
 after_build:
   - sh: docker push $DOCKER_IMAGE
 
 artifacts:
-  - path: tg2sip.zip
-    name: TG2SIP Ubuntu Bionic
+  - path: tg2sip-debian.zip
+    name: TG2SIP Debian 9
