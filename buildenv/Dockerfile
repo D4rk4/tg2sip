@@ -54,7 +54,7 @@ RUN git clone https://github.com/D4rk4/tg2sip.git \
     && cmake -DCMAKE_BUILD_TYPE=Release ..  \
     && cmake --build .
 
-RUN ldd /tg2sip/build/tg2sip
+#RUN ldd /tg2sip/build/tg2sip
 
 FROM debian:stretch
 
