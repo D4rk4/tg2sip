@@ -4,6 +4,8 @@
 
 TG2SIP is a Telegram<->SIP voice gateway. It can be used to forward incoming telegram calls to your SIP PBX or make SIP->Telegram calls.
 
+A minimal Go rewrite prototype is available in the `go/` directory for experimentation.
+
 ## Requirements
 
 Your SIP PBX should be comaptible with `L16@48000` or `OPUS@48000` voice codec.
