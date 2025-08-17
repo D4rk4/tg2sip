@@ -2,7 +2,7 @@
 
 FROM ghcr.io/zelenin/tdlib-docker:b498497-alpine AS tdlib
 
-FROM golang:1.24.1-alpine3.21 AS build
+FROM golang:1.24.3-alpine3.21 AS build
 ENV LANG=en_US.UTF-8
 ENV TZ=UTC
 RUN set -eux && \
