@@ -19,18 +19,24 @@ func startSIP(cfg *ini.File) error {
 	sec := cfg.Section("sip")
 
 	port := sec.Key("port").MustInt(5060)
+	portRange := sec.Key("port_range").MustInt(0)
 	host := sec.Key("public_address").String()
 
 	logger := gosiplog.NewLogrusLogger(pjsipLog, "SIP", nil)
 
 	sipServer = gosip.NewServer(gosip.ServerConfig{Host: host, UserAgent: "tg2sip"}, nil, nil, logger)
 
-	addr := fmt.Sprintf(":%d", port)
-	if err := sipServer.Listen("udp", addr); err != nil {
-		return fmt.Errorf("sip listen: %w", err)
+	var listenErr error
+	for i := 0; i <= portRange; i++ {
+		addr := fmt.Sprintf(":%d", port+i)
+		listenErr = sipServer.Listen("udp", addr)
+		if listenErr == nil {
+			coreLog.Infof("SIP server listening on %s/udp", addr)
+			return nil
+		}
+		coreLog.Warnf("failed to listen on %s: %v", addr, listenErr)
 	}
-	coreLog.Infof("SIP server listening on %s/udp", addr)
-	return nil
+	return fmt.Errorf("sip listen: %w", listenErr)
 }
 
 var tgClient *client.Client
@@ -76,6 +82,28 @@ func startTG(cfg *ini.File) error {
 	tgClient, err = client.NewClient(authorizer)
 	if err != nil {
 		return fmt.Errorf("tdlib client: %w", err)
+	}
+
+	if sec.Key("use_proxy").MustBool(false) {
+		proxyAddr := sec.Key("proxy_address").String()
+		proxyPort := sec.Key("proxy_port").MustInt(0)
+		if proxyAddr != "" && proxyPort != 0 {
+			ptype := &client.ProxyTypeSocks5{
+				Username: sec.Key("proxy_username").String(),
+				Password: sec.Key("proxy_password").String(),
+			}
+			_, err := tgClient.AddProxy(&client.AddProxyRequest{
+				Server: proxyAddr,
+				Port:   int32(proxyPort),
+				Enable: true,
+				Type:   ptype,
+			})
+			if err != nil {
+				return fmt.Errorf("telegram.add_proxy: %w", err)
+			}
+		} else {
+			coreLog.Warn("telegram proxy enabled but address or port missing")
+		}
 	}
 
 	me, err := tgClient.GetMe(context.Background())
