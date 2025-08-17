@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 
 	gosip "github.com/ghettovoice/gosip"
@@ -15,11 +16,40 @@ import (
 type Gateway struct {
 	sipServer gosip.Server
 	tgClient  *client.Client
+	sipClient *SIPClient
+	events    chan interface{}
+	calls     map[string]*CallContext
+	mu        sync.Mutex
 }
 
 // NewGateway creates a new Gateway instance.
 func NewGateway(sipSrv gosip.Server, tgCl *client.Client) *Gateway {
-	return &Gateway{sipServer: sipSrv, tgClient: tgCl}
+	return &Gateway{
+		sipServer: sipSrv,
+		tgClient:  tgCl,
+		sipClient: NewSIPClient(sipSrv),
+		events:    make(chan interface{}, 16),
+		calls:     make(map[string]*CallContext),
+	}
+}
+
+// CallContext stores basic SIP call information.
+type CallContext struct {
+	ID   string
+	From string
+	To   string
+}
+
+// CallStateEvent represents a change in call state.
+type CallStateEvent struct {
+	CallID string
+	State  string
+}
+
+// MediaEvent represents a media-related SIP event.
+type MediaEvent struct {
+	CallID string
+	Body   string
 }
 
 // Start runs the gateway until ctx is canceled.
@@ -27,26 +57,87 @@ func (g *Gateway) Start(ctx context.Context) error {
 	if err := g.sipServer.OnRequest(sip.INVITE, g.handleInvite); err != nil {
 		return err
 	}
+	if err := g.sipServer.OnRequest(sip.ACK, g.handleAck); err != nil {
+		return err
+	}
+	if err := g.sipServer.OnRequest(sip.BYE, g.handleBye); err != nil {
+		return err
+	}
+	if err := g.sipServer.OnRequest(sip.INFO, g.handleInfo); err != nil {
+		return err
+	}
 
 	listener := g.tgClient.GetListener()
-	go func() {
-		for update := range listener.Updates {
+	defer listener.Close()
+
+	for {
+		select {
+		case update := <-listener.Updates:
 			switch u := update.(type) {
 			case *client.UpdateCall:
 				coreLog.Infof("received telegram call update: %d", u.Call.ID)
 			}
+		case ev := <-g.events:
+			coreLog.Infof("received gateway event: %#v", ev)
+		case <-ctx.Done():
+			return nil
 		}
-	}()
-
-	<-ctx.Done()
-	return nil
+	}
 }
 
-// handleInvite logs incoming SIP INVITE requests and responds with 501.
+// handleInvite creates a call context and emits a call state event.
 func (g *Gateway) handleInvite(req sip.Request, tx sip.ServerTransaction) {
+	callID := req.CallID().String()
 	coreLog.Infof("received SIP INVITE: %s -> %s", req.From(), req.To())
+
+	ctx := &CallContext{
+		ID:   callID,
+		From: req.From().String(),
+		To:   req.To().String(),
+	}
+
+	g.mu.Lock()
+	g.calls[callID] = ctx
+	g.mu.Unlock()
+
+	g.events <- CallStateEvent{CallID: callID, State: "incoming"}
+
 	if tx != nil {
-		g.sipServer.RespondOnRequest(req, sip.StatusNotImplemented, "Not implemented", "", nil)
+		g.sipServer.RespondOnRequest(req, sip.StatusTrying, "Trying", "", nil)
+	}
+}
+
+// handleAck emits an answered state for an existing call.
+func (g *Gateway) handleAck(req sip.Request, tx sip.ServerTransaction) {
+	callID := req.CallID().String()
+	coreLog.Infof("received SIP ACK: %s", callID)
+	g.events <- CallStateEvent{CallID: callID, State: "answered"}
+}
+
+// handleBye cleans up the call context and emits an ended state.
+func (g *Gateway) handleBye(req sip.Request, tx sip.ServerTransaction) {
+	callID := req.CallID().String()
+	coreLog.Infof("received SIP BYE: %s", callID)
+	g.events <- CallStateEvent{CallID: callID, State: "ended"}
+	g.mu.Lock()
+	delete(g.calls, callID)
+	g.mu.Unlock()
+	if tx != nil {
+		g.sipServer.RespondOnRequest(req, sip.StatusOK, "OK", "", nil)
+	}
+}
+
+// handleInfo emits a media event for INFO requests.
+func (g *Gateway) handleInfo(req sip.Request, tx sip.ServerTransaction) {
+	callID := req.CallID().String()
+	body := ""
+	if b := req.Body(); b != nil {
+		body = b.String()
+	}
+	coreLog.Infof("received SIP INFO: %s", callID)
+	g.events <- MediaEvent{CallID: callID, Body: body}
+	if tx != nil {
+		g.sipServer.RespondOnRequest(req, sip.StatusOK, "OK", "", nil)
 	}
 }
 
