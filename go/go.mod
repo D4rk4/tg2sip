@@ -4,8 +4,10 @@ go 1.24.3
 
 require (
 	github.com/ghettovoice/gosip v0.0.0-20250630130757-122c8ec8891f
+	github.com/sirupsen/logrus v1.4.2
 	github.com/zelenin/go-tdlib v0.7.6
 	gopkg.in/ini.v1 v1.67.0
+	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 )
 
 require (
@@ -18,7 +20,6 @@ require (
 	github.com/mattn/go-isatty v0.0.8 // indirect
 	github.com/mgutz/ansi v0.0.0-20170206155736-9520e82c474b // indirect
 	github.com/satori/go.uuid v1.2.1-0.20181028125025-b2ce2384e17b // indirect
-	github.com/sirupsen/logrus v1.4.2 // indirect
 	github.com/stretchr/testify v1.10.0 // indirect
 	github.com/tevino/abool v0.0.0-20170917061928-9b9efcf221b5 // indirect
 	github.com/x-cray/logrus-prefixed-formatter v0.5.2 // indirect
