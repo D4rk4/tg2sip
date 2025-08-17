@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -11,6 +14,7 @@ import (
 	gosip "github.com/ghettovoice/gosip"
 	"github.com/ghettovoice/gosip/sip"
 	client "github.com/zelenin/go-tdlib/client"
+	ini "gopkg.in/ini.v1"
 )
 
 // Gateway connects SIP server and Telegram client.
@@ -21,11 +25,12 @@ type Gateway struct {
 	events    chan interface{}
 	calls     map[string]*CallContext
 	contacts  *ContactCache
+	callback  string
 	mu        sync.Mutex
 }
 
 // NewGateway creates a new Gateway instance.
-func NewGateway(sipSrv gosip.Server, tgCl *client.Client) *Gateway {
+func NewGateway(sipSrv gosip.Server, tgCl *client.Client, callback string) *Gateway {
 	return &Gateway{
 		sipServer: sipSrv,
 		tgClient:  tgCl,
@@ -33,6 +38,7 @@ func NewGateway(sipSrv gosip.Server, tgCl *client.Client) *Gateway {
 		events:    make(chan interface{}, 16),
 		calls:     make(map[string]*CallContext),
 		contacts:  NewContactCache(),
+		callback:  callback,
 	}
 }
 
@@ -84,6 +90,7 @@ func (g *Gateway) Start(ctx context.Context) error {
 			switch u := update.(type) {
 			case *client.UpdateCall:
 				coreLog.Infof("received telegram call update: %d", u.Call.ID)
+				g.handleTelegramCall(u)
 			case *client.UpdateUser:
 				g.contacts.Update(u.User)
 			}
@@ -111,6 +118,107 @@ func (g *Gateway) refreshContactsLoop(ctx context.Context) {
 	}
 }
 
+// parseUserFromHeaders checks custom SIP headers for Telegram user info.
+func (g *Gateway) parseUserFromHeaders(req sip.Request) (int64, bool) {
+	if hdrs := req.GetHeaders("X-TG-ID"); len(hdrs) > 0 {
+		if id, err := strconv.ParseInt(hdrs[0].Value(), 10, 64); err == nil {
+			return id, true
+		}
+	}
+	if hdrs := req.GetHeaders("X-TG-Username"); len(hdrs) > 0 {
+		name := hdrs[0].Value()
+		if id, ok := g.contacts.Resolve(strings.ToLower(name)); ok {
+			return id, true
+		}
+		if id, ok := g.contacts.SearchAndAdd(g.tgClient, name); ok {
+			return id, true
+		}
+	}
+	if hdrs := req.GetHeaders("X-TG-Phone"); len(hdrs) > 0 {
+		phone := hdrs[0].Value()
+		if id, ok := g.contacts.Resolve(phone); ok {
+			return id, true
+		}
+		if id, ok := g.contacts.SearchAndAdd(g.tgClient, phone); ok {
+			return id, true
+		}
+	}
+	return 0, false
+}
+
+// resolveUser resolves extension patterns like tg#username, +phone or numeric ID.
+func (g *Gateway) resolveUser(ext string) (int64, bool) {
+	if ext == "" {
+		return 0, false
+	}
+	switch {
+	case strings.HasPrefix(ext, "tg#"):
+		name := ext[3:]
+		if id, ok := g.contacts.Resolve(strings.ToLower(name)); ok {
+			return id, true
+		}
+		return g.contacts.SearchAndAdd(g.tgClient, name)
+	case strings.HasPrefix(ext, "+"):
+		phone := ext[1:]
+		if id, ok := g.contacts.Resolve(phone); ok {
+			return id, true
+		}
+		return g.contacts.SearchAndAdd(g.tgClient, phone)
+	default:
+		if id, err := strconv.ParseInt(ext, 10, 64); err == nil {
+			return id, true
+		}
+		if id, ok := g.contacts.Resolve(ext); ok {
+			return id, true
+		}
+		return g.contacts.SearchAndAdd(g.tgClient, ext)
+	}
+}
+
+// handleTelegramCall processes incoming Telegram call updates and dials SIP.
+func (g *Gateway) handleTelegramCall(u *client.UpdateCall) {
+	if u.Call.IsOutgoing {
+		return
+	}
+	if _, ok := u.Call.State.(*client.CallStatePending); !ok {
+		return
+	}
+	if err := acceptTelegramCall(g.tgClient, u.Call.ID); err != nil {
+		coreLog.Warnf("acceptCall failed: %v", err)
+		return
+	}
+	user, err := g.tgClient.GetUser(&client.GetUserRequest{UserId: u.Call.UserId})
+	if err != nil {
+		coreLog.Warnf("getUser failed: %v", err)
+		return
+	}
+	headers := buildUserHeaders(u.Call.ID, user)
+	if err := g.sipClient.Dial(context.Background(), "tg", g.callback, headers); err != nil {
+		coreLog.Warnf("SIP dial failed: %v", err)
+	}
+}
+
+// buildUserHeaders builds SIP headers with Telegram user info.
+func buildUserHeaders(callID int64, u *client.User) map[string]string {
+	headers := map[string]string{
+		"X-GW-Context": fmt.Sprintf("%d", callID),
+		"X-TG-ID":      fmt.Sprintf("%d", u.Id),
+	}
+	if u.FirstName != "" {
+		headers["X-TG-FirstName"] = u.FirstName
+	}
+	if u.LastName != "" {
+		headers["X-TG-LastName"] = u.LastName
+	}
+	if u.Username != "" {
+		headers["X-TG-Username"] = u.Username
+	}
+	if u.PhoneNumber != "" {
+		headers["X-TG-Phone"] = u.PhoneNumber
+	}
+	return headers
+}
+
 // handleInvite creates a call context and emits a call state event.
 func (g *Gateway) handleInvite(req sip.Request, tx sip.ServerTransaction) {
 	callID := req.CallID().String()
@@ -124,12 +232,9 @@ func (g *Gateway) handleInvite(req sip.Request, tx sip.ServerTransaction) {
 		}
 	}
 
-	userID, ok := g.contacts.Resolve(ext)
+	userID, ok := g.parseUserFromHeaders(req)
 	if !ok {
-		if id, found := g.contacts.SearchAndAdd(g.tgClient, ext); found {
-			userID = id
-			ok = true
-		}
+		userID, ok = g.resolveUser(ext)
 	}
 	if !ok {
 		coreLog.Warnf("unknown extension %s", ext)
@@ -139,8 +244,7 @@ func (g *Gateway) handleInvite(req sip.Request, tx sip.ServerTransaction) {
 		return
 	}
 
-	protocol := &client.CallProtocol{UdpP2p: true, UdpReflector: true, MinLayer: 65, MaxLayer: 92}
-	if _, err := g.tgClient.CreateCall(&client.CreateCallRequest{UserId: userID, Protocol: protocol}); err != nil {
+	if err := createTelegramCall(g.tgClient, userID); err != nil {
 		coreLog.Warnf("createCall failed: %v", err)
 	}
 
@@ -196,9 +300,10 @@ func (g *Gateway) handleInfo(req sip.Request, tx sip.ServerTransaction) {
 }
 
 // startGateway initializes and starts the gateway component.
-func startGateway() error {
+func startGateway(cfg *ini.File) error {
 	coreLog.Info("starting gateway")
-	gw := NewGateway(sipServer, tgClient)
+	callback := cfg.Section("sip").Key("callback_uri").String()
+	gw := NewGateway(sipServer, tgClient, callback)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	return gw.Start(ctx)

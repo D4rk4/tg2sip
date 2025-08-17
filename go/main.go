@@ -132,7 +132,7 @@ func main() {
 	if err := startTG(cfg); err != nil {
 		coreLog.Fatalf("failed to start Telegram client: %v", err)
 	}
-	if err := startGateway(); err != nil {
+	if err := startGateway(cfg); err != nil {
 		coreLog.Fatalf("failed to start gateway: %v", err)
 	}
 
