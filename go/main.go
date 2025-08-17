@@ -7,12 +7,30 @@ import (
 	"path/filepath"
 	"time"
 
+	gosip "github.com/ghettovoice/gosip"
+	gosiplog "github.com/ghettovoice/gosip/log"
 	client "github.com/zelenin/go-tdlib/client"
 	"gopkg.in/ini.v1"
 )
 
-func startSIP() error {
-	log.Println("starting SIP client (stub)")
+var sipServer gosip.Server
+
+func startSIP(cfg *ini.File) error {
+	log.Println("starting SIP server")
+	sec := cfg.Section("sip")
+
+	port := sec.Key("port").MustInt(5060)
+	host := sec.Key("public_address").String()
+
+	logger := gosiplog.NewDefaultLogrusLogger().WithPrefix("SIP")
+
+	sipServer = gosip.NewServer(gosip.ServerConfig{Host: host, UserAgent: "tg2sip"}, nil, nil, logger)
+
+	addr := fmt.Sprintf(":%d", port)
+	if err := sipServer.Listen("udp", addr); err != nil {
+		return fmt.Errorf("sip listen: %w", err)
+	}
+	log.Printf("SIP server listening on %s/udp", addr)
 	return nil
 }
 
@@ -83,7 +101,7 @@ func main() {
 	}
 	log.Println("settings loaded", cfg.Section("").KeysHash())
 
-	if err := startSIP(); err != nil {
+	if err := startSIP(cfg); err != nil {
 		log.Fatalf("failed to start SIP client: %v", err)
 	}
 	if err := startTG(cfg); err != nil {
