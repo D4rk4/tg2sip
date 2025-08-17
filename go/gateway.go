@@ -6,6 +6,7 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 
 	gosip "github.com/ghettovoice/gosip"
 	"github.com/ghettovoice/gosip/sip"
@@ -19,6 +20,7 @@ type Gateway struct {
 	sipClient *SIPClient
 	events    chan interface{}
 	calls     map[string]*CallContext
+	contacts  *ContactCache
 	mu        sync.Mutex
 }
 
@@ -30,6 +32,7 @@ func NewGateway(sipSrv gosip.Server, tgCl *client.Client) *Gateway {
 		sipClient: NewSIPClient(sipSrv),
 		events:    make(chan interface{}, 16),
 		calls:     make(map[string]*CallContext),
+		contacts:  NewContactCache(),
 	}
 }
 
@@ -67,6 +70,11 @@ func (g *Gateway) Start(ctx context.Context) error {
 		return err
 	}
 
+	if err := g.contacts.Refresh(g.tgClient); err != nil {
+		coreLog.Warnf("initial contacts load failed: %v", err)
+	}
+	go g.refreshContactsLoop(ctx)
+
 	listener := g.tgClient.GetListener()
 	defer listener.Close()
 
@@ -76,6 +84,8 @@ func (g *Gateway) Start(ctx context.Context) error {
 			switch u := update.(type) {
 			case *client.UpdateCall:
 				coreLog.Infof("received telegram call update: %d", u.Call.ID)
+			case *client.UpdateUser:
+				g.contacts.Update(u.User)
 			}
 		case ev := <-g.events:
 			coreLog.Infof("received gateway event: %#v", ev)
@@ -85,10 +95,54 @@ func (g *Gateway) Start(ctx context.Context) error {
 	}
 }
 
+// refreshContactsLoop periodically reloads the contact cache.
+func (g *Gateway) refreshContactsLoop(ctx context.Context) {
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			if err := g.contacts.Refresh(g.tgClient); err != nil {
+				coreLog.Warnf("contact refresh failed: %v", err)
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
 // handleInvite creates a call context and emits a call state event.
 func (g *Gateway) handleInvite(req sip.Request, tx sip.ServerTransaction) {
 	callID := req.CallID().String()
 	coreLog.Infof("received SIP INVITE: %s -> %s", req.From(), req.To())
+
+	to, _ := req.To()
+	ext := ""
+	if to != nil && to.Address != nil {
+		if u := to.Address.User(); u != nil {
+			ext = u.String()
+		}
+	}
+
+	userID, ok := g.contacts.Resolve(ext)
+	if !ok {
+		if id, found := g.contacts.SearchAndAdd(g.tgClient, ext); found {
+			userID = id
+			ok = true
+		}
+	}
+	if !ok {
+		coreLog.Warnf("unknown extension %s", ext)
+		if tx != nil {
+			g.sipServer.RespondOnRequest(req, sip.StatusNotFound, "Not Found", "", nil)
+		}
+		return
+	}
+
+	protocol := &client.CallProtocol{UdpP2p: true, UdpReflector: true, MinLayer: 65, MaxLayer: 92}
+	if _, err := g.tgClient.CreateCall(&client.CreateCallRequest{UserId: userID, Protocol: protocol}); err != nil {
+		coreLog.Warnf("createCall failed: %v", err)
+	}
 
 	ctx := &CallContext{
 		ID:   callID,
