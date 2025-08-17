@@ -17,8 +17,8 @@ func NewSIPClient(srv gosip.Server) *SIPClient {
 }
 
 // Dial starts a new outbound call.
-func (c *SIPClient) Dial(ctx context.Context, from, to string) error {
-	coreLog.Infof("SIP Dial from %s to %s", from, to)
+func (c *SIPClient) Dial(ctx context.Context, from, to string, headers map[string]string) error {
+	coreLog.Infof("SIP Dial from %s to %s headers=%v", from, to, headers)
 	return nil
 }
 
