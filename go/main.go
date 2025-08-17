@@ -86,11 +86,6 @@ func startTG(cfg *ini.File) error {
 	return nil
 }
 
-func startGateway() error {
-	coreLog.Info("starting gateway (stub)")
-	return nil
-}
-
 func main() {
 	cfg, err := ini.Load("../settings.ini")
 	if err != nil {
