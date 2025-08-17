@@ -3,6 +3,7 @@ package main
 import (
 	"io"
 	"os"
+	"strings"
 
 	"github.com/sirupsen/logrus"
 	client "github.com/zelenin/go-tdlib/client"
@@ -15,6 +16,9 @@ var (
 	pjsipLog  *logrus.Entry
 	tgvoipLog *logrus.Entry
 )
+
+// sipMessages controls whether full SIP messages are logged.
+var sipMessages bool
 
 // initLogging configures loggers similar to the C++ version.
 func initLogging(cfg *ini.File) error {
@@ -32,6 +36,12 @@ func initLogging(cfg *ini.File) error {
 	coreLog = newLogger("core", toLogrusLevel(sec.Key("core").MustInt(2)), consoleMin, fileMin, fileWriter)
 	pjsipLog = newLogger("pjsip", toLogrusLevel(sec.Key("pjsip").MustInt(2)), consoleMin, fileMin, fileWriter)
 	tgvoipLog = newLogger("tgvoip", toLogrusLevel(sec.Key("tgvoip").MustInt(5)), consoleMin, fileMin, fileWriter)
+
+	sipMessages = sec.Key("sip_messages").MustBool(true)
+	if !sipMessages {
+		// filter out verbose SIP message dumps
+		pjsipLog.Logger.AddHook(&sipMessageFilterHook{})
+	}
 
 	// configure TDLib logging
 	tdlibLevel := int32(sec.Key("tdlib").MustInt(3))
@@ -98,4 +108,17 @@ func toLogrusLevel(v int) logrus.Level {
 	default:
 		return logrus.PanicLevel // off
 	}
+}
+
+// sipMessageFilterHook suppresses logging of full SIP messages when disabled via configuration.
+type sipMessageFilterHook struct{}
+
+func (h *sipMessageFilterHook) Levels() []logrus.Level { return logrus.AllLevels }
+
+func (h *sipMessageFilterHook) Fire(e *logrus.Entry) error {
+	if strings.HasPrefix(e.Message, "received SIP message:") {
+		// elevate level so writer hooks ignore the entry
+		e.Level = logrus.PanicLevel + 1
+	}
+	return nil
 }
