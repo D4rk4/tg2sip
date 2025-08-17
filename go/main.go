@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"path/filepath"
 	"time"
 
@@ -16,13 +15,13 @@ import (
 var sipServer gosip.Server
 
 func startSIP(cfg *ini.File) error {
-	log.Println("starting SIP server")
+	coreLog.Info("starting SIP server")
 	sec := cfg.Section("sip")
 
 	port := sec.Key("port").MustInt(5060)
 	host := sec.Key("public_address").String()
 
-	logger := gosiplog.NewDefaultLogrusLogger().WithPrefix("SIP")
+	logger := gosiplog.NewLogrusLogger(pjsipLog, "SIP", nil)
 
 	sipServer = gosip.NewServer(gosip.ServerConfig{Host: host, UserAgent: "tg2sip"}, nil, nil, logger)
 
@@ -30,14 +29,14 @@ func startSIP(cfg *ini.File) error {
 	if err := sipServer.Listen("udp", addr); err != nil {
 		return fmt.Errorf("sip listen: %w", err)
 	}
-	log.Printf("SIP server listening on %s/udp", addr)
+	coreLog.Infof("SIP server listening on %s/udp", addr)
 	return nil
 }
 
 var tgClient *client.Client
 
 func startTG(cfg *ini.File) error {
-	log.Println("starting Telegram client")
+	coreLog.Info("starting Telegram client")
 	sec := cfg.Section("telegram")
 
 	apiID, err := sec.Key("api_id").Int()
@@ -83,34 +82,37 @@ func startTG(cfg *ini.File) error {
 	if err != nil {
 		return fmt.Errorf("get me: %w", err)
 	}
-	log.Printf("telegram authorized as %s %s (@%s)", me.FirstName, me.LastName, me.Username)
+	coreLog.Infof("telegram authorized as %s %s (@%s)", me.FirstName, me.LastName, me.Username)
 	return nil
 }
 
 func startGateway() error {
-	log.Println("starting gateway (stub)")
+	coreLog.Info("starting gateway (stub)")
 	return nil
 }
 
 func main() {
-	log.SetPrefix("tg2sip: ")
-
 	cfg, err := ini.Load("../settings.ini")
 	if err != nil {
-		log.Fatalf("failed to load settings: %v", err)
+		fmt.Printf("failed to load settings: %v\n", err)
+		return
 	}
-	log.Println("settings loaded", cfg.Section("").KeysHash())
+	if err := initLogging(cfg); err != nil {
+		fmt.Printf("failed to init logging: %v\n", err)
+		return
+	}
+	coreLog.Info("settings loaded", cfg.Section("").KeysHash())
 
 	if err := startSIP(cfg); err != nil {
-		log.Fatalf("failed to start SIP client: %v", err)
+		coreLog.Fatalf("failed to start SIP client: %v", err)
 	}
 	if err := startTG(cfg); err != nil {
-		log.Fatalf("failed to start Telegram client: %v", err)
+		coreLog.Fatalf("failed to start Telegram client: %v", err)
 	}
 	if err := startGateway(); err != nil {
-		log.Fatalf("failed to start gateway: %v", err)
+		coreLog.Fatalf("failed to start gateway: %v", err)
 	}
 
-	log.Println("performing a graceful shutdown...")
+	coreLog.Info("performing a graceful shutdown...")
 	time.Sleep(time.Second)
 }
