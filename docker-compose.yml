@@ -1,0 +1,10 @@
+version: '3.8'
+services:
+  tg2sip:
+    build: .
+    image: tg2sip-go
+    volumes:
+      - ./settings.ini:/app/settings.ini:ro
+    ports:
+      - "5060:5060/udp"
+    restart: unless-stopped
