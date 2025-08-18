@@ -4,6 +4,7 @@ import (
 	"context"
 
 	gosip "github.com/ghettovoice/gosip"
+	"tg2sip/tgvoip"
 )
 
 // SIPClient provides helper methods to interact with the SIP server.
@@ -43,5 +44,6 @@ func (c *SIPClient) DialDtmf(ctx context.Context, callID, digits string) error {
 // BridgeAudio connects audio between two calls.
 func (c *SIPClient) BridgeAudio(ctx context.Context, srcID, dstID string) error {
 	coreLog.Infof("SIP BridgeAudio %s <-> %s", srcID, dstID)
+	tgvoip.ConnectSIPMedia(tgvoip.NewController(), func([]int16) {}, func([]int16) {})
 	return nil
 }
