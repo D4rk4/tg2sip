@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -56,6 +57,9 @@ type MediaEvent struct {
 	Body   string
 }
 
+// dtmfRegex matches valid DTMF digit sequences.
+var dtmfRegex = regexp.MustCompile(`^[0-9A-D*#]+$`)
+
 // Start runs the gateway until ctx is canceled.
 func (g *Gateway) Start(ctx context.Context) error {
 	if err := g.sipServer.OnRequest(sip.INVITE, g.handleInvite); err != nil {
@@ -88,6 +92,8 @@ func (g *Gateway) Start(ctx context.Context) error {
 				g.handleTelegramCall(u)
 			case *client.UpdateUser:
 				g.contacts.Update(u.User)
+			case *client.UpdateNewMessage:
+				g.handleTelegramMessage(u)
 			}
 		case ev := <-g.events:
 			coreLog.Infof("received gateway event: %#v", ev)
@@ -192,6 +198,38 @@ func (g *Gateway) handleTelegramCall(u *client.UpdateCall) {
 	headers := buildUserHeaders(u.Call.ID, user)
 	if err := g.sipClient.Dial(context.Background(), "tg", g.callback, headers); err != nil {
 		coreLog.Warnf("SIP dial failed: %v", err)
+	}
+}
+
+// handleTelegramMessage processes incoming Telegram text messages for DTMF digits.
+func (g *Gateway) handleTelegramMessage(u *client.UpdateNewMessage) {
+	msg := u.Message
+	content, ok := msg.Content.(*client.MessageText)
+	if !ok || content.Text == nil {
+		return
+	}
+	text := strings.ToUpper(strings.TrimSpace(content.Text.Text))
+	if text == "" || !dtmfRegex.MatchString(text) {
+		return
+	}
+	if len(text) > 32 {
+		text = text[:32]
+	}
+	sender, ok := msg.SenderId.(*client.MessageSenderUser)
+	if !ok {
+		return
+	}
+	var ctx *Context
+	g.mu.Lock()
+	for _, c := range g.calls {
+		if c.UserID == sender.UserId && c.State == StateWaitDTMF {
+			ctx = c
+			break
+		}
+	}
+	g.mu.Unlock()
+	if ctx != nil {
+		_ = g.sipClient.DialDtmf(context.Background(), ctx.SIPCallID, text)
 	}
 }
 
