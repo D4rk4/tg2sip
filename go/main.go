@@ -3,7 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	gosip "github.com/ghettovoice/gosip"
@@ -14,7 +17,7 @@ import (
 
 var sipServer gosip.Server
 
-func startSIP(cfg *Settings) error {
+func startSIP(ctx context.Context, cfg *Settings) error {
 	coreLog.Info("starting SIP server")
 
 	port := cfg.SIPPort()
@@ -31,6 +34,10 @@ func startSIP(cfg *Settings) error {
 		listenErr = sipServer.Listen("udp", addr)
 		if listenErr == nil {
 			coreLog.Infof("SIP server listening on %s/udp", addr)
+			go func() {
+				<-ctx.Done()
+				sipServer.Shutdown()
+			}()
 			return nil
 		}
 		coreLog.Warnf("failed to listen on %s: %v", addr, listenErr)
@@ -40,7 +47,7 @@ func startSIP(cfg *Settings) error {
 
 var tgClient *client.Client
 
-func startTG(cfg *Settings) error {
+func startTG(ctx context.Context, cfg *Settings) error {
 	coreLog.Info("starting Telegram client")
 
 	apiID := cfg.APIID()
@@ -104,10 +111,23 @@ func startTG(cfg *Settings) error {
 		return fmt.Errorf("get me: %w", err)
 	}
 	coreLog.Infof("telegram authorized as %s %s (@%s)", me.FirstName, me.LastName, me.Username)
+
+	go func() {
+		<-ctx.Done()
+		if tgClient != nil {
+			if _, err := tgClient.Close(); err != nil {
+				coreLog.Warnf("telegram client close: %v", err)
+			}
+		}
+	}()
+
 	return nil
 }
 
 func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	cfg, err := ini.Load("../settings.ini")
 	if err != nil {
 		fmt.Printf("failed to load settings: %v\n", err)
@@ -126,16 +146,17 @@ func main() {
 	}
 	coreLog.Info("settings loaded", cfg.Section("").KeysHash())
 
-	if err := startSIP(settings); err != nil {
+	if err := startSIP(ctx, settings); err != nil {
 		coreLog.Fatalf("failed to start SIP client: %v", err)
 	}
-	if err := startTG(settings); err != nil {
+	if err := startTG(ctx, settings); err != nil {
 		coreLog.Fatalf("failed to start Telegram client: %v", err)
 	}
-	if err := startGateway(settings); err != nil {
+	if err := startGateway(ctx, settings); err != nil {
 		coreLog.Fatalf("failed to start gateway: %v", err)
 	}
 
 	coreLog.Info("performing a graceful shutdown...")
 	time.Sleep(time.Second)
+	closeLogging()
 }
