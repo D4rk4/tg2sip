@@ -16,7 +16,6 @@ import (
 	gosip "github.com/ghettovoice/gosip"
 	"github.com/ghettovoice/gosip/sip"
 	client "github.com/zelenin/go-tdlib/client"
-	ini "gopkg.in/ini.v1"
 )
 
 // Gateway connects SIP server and Telegram client.
@@ -455,13 +454,10 @@ func (g *Gateway) handleInfo(req sip.Request, tx sip.ServerTransaction) {
 }
 
 // startGateway initializes and starts the gateway component.
-func startGateway(cfg *ini.File) error {
+func startGateway(cfg *Settings) error {
 	coreLog.Info("starting gateway")
-	callback := cfg.Section("sip").Key("callback_uri").String()
-	other := cfg.Section("other")
-	extra := time.Duration(other.Key("extra_wait_time").MustInt(0)) * time.Second
-	pf := time.Duration(other.Key("peer_flood_time").MustInt(86400)) * time.Second
-	gw := NewGateway(sipServer, tgClient, callback, extra, pf)
+	callback := cfg.CallbackURI()
+	gw := NewGateway(sipServer, tgClient, callback, cfg.ExtraWaitTime(), cfg.PeerFloodTime())
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	return gw.Start(ctx)
