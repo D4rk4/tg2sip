@@ -14,13 +14,12 @@ import (
 
 var sipServer gosip.Server
 
-func startSIP(cfg *ini.File) error {
+func startSIP(cfg *Settings) error {
 	coreLog.Info("starting SIP server")
-	sec := cfg.Section("sip")
 
-	port := sec.Key("port").MustInt(5060)
-	portRange := sec.Key("port_range").MustInt(0)
-	host := sec.Key("public_address").String()
+	port := cfg.SIPPort()
+	portRange := cfg.SIPPortRange()
+	host := cfg.PublicAddress()
 
 	logger := gosiplog.NewLogrusLogger(pjsipLog, "SIP", nil)
 
@@ -41,20 +40,13 @@ func startSIP(cfg *ini.File) error {
 
 var tgClient *client.Client
 
-func startTG(cfg *ini.File) error {
+func startTG(cfg *Settings) error {
 	coreLog.Info("starting Telegram client")
-	sec := cfg.Section("telegram")
 
-	apiID, err := sec.Key("api_id").Int()
-	if err != nil {
-		return fmt.Errorf("telegram.api_id: %w", err)
-	}
-	apiHash := sec.Key("api_hash").String()
-	if apiHash == "" {
-		return fmt.Errorf("telegram.api_hash is empty")
-	}
+	apiID := cfg.APIID()
+	apiHash := cfg.APIHash()
 
-	dataDir := sec.Key("database_folder").String()
+	dataDir := cfg.DatabaseFolder()
 	if dataDir == "" {
 		dataDir = filepath.Join(".tdlib")
 	}
@@ -69,28 +61,29 @@ func startTG(cfg *ini.File) error {
 		UseSecretChats:         false,
 		ApiId:                  int32(apiID),
 		ApiHash:                apiHash,
-		SystemLanguageCode:     sec.Key("system_language_code").MustString("en"),
-		DeviceModel:            sec.Key("device_model").MustString("tg2sip"),
-		SystemVersion:          sec.Key("system_version").MustString("linux"),
-		ApplicationVersion:     sec.Key("application_version").MustString("0.1"),
+		SystemLanguageCode:     cfg.SystemLanguageCode(),
+		DeviceModel:            cfg.DeviceModel(),
+		SystemVersion:          cfg.SystemVersion(),
+		ApplicationVersion:     cfg.ApplicationVersion(),
 		EnableStorageOptimizer: true,
 	}
 
 	authorizer := client.ClientAuthorizer(params)
 	go client.CliInteractor(authorizer)
 
+	var err error
 	tgClient, err = client.NewClient(authorizer)
 	if err != nil {
 		return fmt.Errorf("tdlib client: %w", err)
 	}
 
-	if sec.Key("use_proxy").MustBool(false) {
-		proxyAddr := sec.Key("proxy_address").String()
-		proxyPort := sec.Key("proxy_port").MustInt(0)
+	if cfg.ProxyEnabled() {
+		proxyAddr := cfg.ProxyAddress()
+		proxyPort := cfg.ProxyPort()
 		if proxyAddr != "" && proxyPort != 0 {
 			ptype := &client.ProxyTypeSocks5{
-				Username: sec.Key("proxy_username").String(),
-				Password: sec.Key("proxy_password").String(),
+				Username: cfg.ProxyUsername(),
+				Password: cfg.ProxyPassword(),
 			}
 			_, err := tgClient.AddProxy(&client.AddProxyRequest{
 				Server: proxyAddr,
@@ -120,19 +113,26 @@ func main() {
 		fmt.Printf("failed to load settings: %v\n", err)
 		return
 	}
+
+	settings, err := LoadSettings(cfg)
+	if err != nil {
+		fmt.Printf("failed to parse settings: %v\n", err)
+		return
+	}
+
 	if err := initLogging(cfg); err != nil {
 		fmt.Printf("failed to init logging: %v\n", err)
 		return
 	}
 	coreLog.Info("settings loaded", cfg.Section("").KeysHash())
 
-	if err := startSIP(cfg); err != nil {
+	if err := startSIP(settings); err != nil {
 		coreLog.Fatalf("failed to start SIP client: %v", err)
 	}
-	if err := startTG(cfg); err != nil {
+	if err := startTG(settings); err != nil {
 		coreLog.Fatalf("failed to start Telegram client: %v", err)
 	}
-	if err := startGateway(cfg); err != nil {
+	if err := startGateway(settings); err != nil {
 		coreLog.Fatalf("failed to start gateway: %v", err)
 	}
 
