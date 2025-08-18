@@ -19,34 +19,29 @@ import (
 
 // Gateway connects SIP server and Telegram client.
 type Gateway struct {
-	sipServer gosip.Server
-	tgClient  *client.Client
-	sipClient *SIPClient
-	events    chan interface{}
-	calls     map[string]*CallContext
-	contacts  *ContactCache
-	callback  string
-	mu        sync.Mutex
+	sipServer      gosip.Server
+	tgClient       *client.Client
+	sipClient      *SIPClient
+	events         chan interface{}
+	internalEvents chan internalEvent
+	calls          map[string]*Context
+	contacts       *ContactCache
+	callback       string
+	mu             sync.Mutex
 }
 
 // NewGateway creates a new Gateway instance.
 func NewGateway(sipSrv gosip.Server, tgCl *client.Client, callback string) *Gateway {
 	return &Gateway{
-		sipServer: sipSrv,
-		tgClient:  tgCl,
-		sipClient: NewSIPClient(sipSrv),
-		events:    make(chan interface{}, 16),
-		calls:     make(map[string]*CallContext),
-		contacts:  NewContactCache(),
-		callback:  callback,
+		sipServer:      sipSrv,
+		tgClient:       tgCl,
+		sipClient:      NewSIPClient(sipSrv),
+		events:         make(chan interface{}, 16),
+		internalEvents: make(chan internalEvent, 16),
+		calls:          make(map[string]*Context),
+		contacts:       NewContactCache(),
+		callback:       callback,
 	}
-}
-
-// CallContext stores basic SIP call information.
-type CallContext struct {
-	ID   string
-	From string
-	To   string
 }
 
 // CallStateEvent represents a change in call state.
@@ -96,6 +91,8 @@ func (g *Gateway) Start(ctx context.Context) error {
 			}
 		case ev := <-g.events:
 			coreLog.Infof("received gateway event: %#v", ev)
+		case ie := <-g.internalEvents:
+			g.processInternalEvent(ie)
 		case <-ctx.Done():
 			return nil
 		}
@@ -198,6 +195,47 @@ func (g *Gateway) handleTelegramCall(u *client.UpdateCall) {
 	}
 }
 
+// processInternalEvent advances call state machine and handles terminal transitions.
+func (g *Gateway) processInternalEvent(ev internalEvent) {
+	g.mu.Lock()
+	ctx := g.calls[ev.ctxID]
+	g.mu.Unlock()
+	if ctx == nil {
+		return
+	}
+	switch ev.typ {
+	case evIncoming:
+		ctx.State = StateIncoming
+	case evOutgoing:
+		ctx.State = StateOutgoing
+	case evWaitMedia:
+		ctx.State = StateWaitMedia
+	case evWaitDTMF:
+		ctx.State = StateWaitDTMF
+	case evCleanup:
+		ctx.State = StateCleanup
+		g.cleanUp(ctx)
+		g.mu.Lock()
+		delete(g.calls, ev.ctxID)
+		g.mu.Unlock()
+	}
+}
+
+// cleanUp stops controllers and hangs up on both sides.
+func (g *Gateway) cleanUp(ctx *Context) {
+	if ctx.Controller != nil {
+		ctx.Controller.Stop()
+	}
+	if ctx.SIPCallID != "" {
+		_ = g.sipClient.Hangup(context.Background(), ctx.SIPCallID)
+	}
+	if ctx.TGCallID != 0 {
+		if err := discardTelegramCall(g.tgClient, ctx.TGCallID); err != nil {
+			coreLog.Warnf("discard telegram call failed: %v", err)
+		}
+	}
+}
+
 // buildUserHeaders builds SIP headers with Telegram user info.
 func buildUserHeaders(callID int64, u *client.User) map[string]string {
 	headers := map[string]string{
@@ -248,17 +286,14 @@ func (g *Gateway) handleInvite(req sip.Request, tx sip.ServerTransaction) {
 		coreLog.Warnf("createCall failed: %v", err)
 	}
 
-	ctx := &CallContext{
-		ID:   callID,
-		From: req.From().String(),
-		To:   req.To().String(),
-	}
+	ctx := &Context{ID: callID, SIPCallID: callID, UserID: userID, State: StateIncoming}
 
 	g.mu.Lock()
 	g.calls[callID] = ctx
 	g.mu.Unlock()
 
 	g.events <- CallStateEvent{CallID: callID, State: "incoming"}
+	g.internalEvents <- internalEvent{ctxID: callID, typ: evIncoming}
 
 	if tx != nil {
 		g.sipServer.RespondOnRequest(req, sip.StatusTrying, "Trying", "", nil)
@@ -270,6 +305,7 @@ func (g *Gateway) handleAck(req sip.Request, tx sip.ServerTransaction) {
 	callID := req.CallID().String()
 	coreLog.Infof("received SIP ACK: %s", callID)
 	g.events <- CallStateEvent{CallID: callID, State: "answered"}
+	g.internalEvents <- internalEvent{ctxID: callID, typ: evWaitMedia}
 }
 
 // handleBye cleans up the call context and emits an ended state.
@@ -277,9 +313,7 @@ func (g *Gateway) handleBye(req sip.Request, tx sip.ServerTransaction) {
 	callID := req.CallID().String()
 	coreLog.Infof("received SIP BYE: %s", callID)
 	g.events <- CallStateEvent{CallID: callID, State: "ended"}
-	g.mu.Lock()
-	delete(g.calls, callID)
-	g.mu.Unlock()
+	g.internalEvents <- internalEvent{ctxID: callID, typ: evCleanup}
 	if tx != nil {
 		g.sipServer.RespondOnRequest(req, sip.StatusOK, "OK", "", nil)
 	}
@@ -294,6 +328,7 @@ func (g *Gateway) handleInfo(req sip.Request, tx sip.ServerTransaction) {
 	}
 	coreLog.Infof("received SIP INFO: %s", callID)
 	g.events <- MediaEvent{CallID: callID, Body: body}
+	g.internalEvents <- internalEvent{ctxID: callID, typ: evWaitDTMF}
 	if tx != nil {
 		g.sipServer.RespondOnRequest(req, sip.StatusOK, "OK", "", nil)
 	}
