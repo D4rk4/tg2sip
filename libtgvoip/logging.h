@@ -15,46 +15,100 @@
 
 #ifdef TGVOIP_USE_SPDLOG
 #include "spdlog/spdlog.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
+// Set callback to receive libtgvoip log messages.
+void tgvoip_set_log_callback(void (*cb)(char level, const char *msg));
+#ifdef __cplusplus
+}
+#endif
 #endif
 
 #include <stdio.h>
 
-void tgvoip_log_file_printf(char level, const char* msg, ...);
-void tgvoip_log_file_write_header(FILE* file);
+void tgvoip_log_file_printf(char level, const char *msg, ...);
+void tgvoip_log_file_write_header(FILE *file);
 
 #ifdef TGVOIP_USE_SPDLOG
-void tgvoip_log_spdlog(char level, const char* msg, ...);
+void tgvoip_log_spdlog(char level, const char *msg, ...);
 #endif
 
 #if defined(__ANDROID__)
 
 #include <android/log.h>
 
-//#define _LOG_WRAP(...) __BASE_FILE__":"LSTR_INT(__LINE__)": "__VA_ARGS__
+// #define _LOG_WRAP(...) __BASE_FILE__":"LSTR_INT(__LINE__)": "__VA_ARGS__
 #define _LOG_WRAP(...) __VA_ARGS__
 #define TAG "tg-voip-native"
-#define LOGV(...) {__android_log_print(ANDROID_LOG_VERBOSE, TAG, _LOG_WRAP(__VA_ARGS__)); tgvoip_log_file_printf('V', __VA_ARGS__);}
-#define LOGD(...) {__android_log_print(ANDROID_LOG_DEBUG, TAG, _LOG_WRAP(__VA_ARGS__)); tgvoip_log_file_printf('D', __VA_ARGS__);}
-#define LOGI(...) {__android_log_print(ANDROID_LOG_INFO, TAG, _LOG_WRAP(__VA_ARGS__)); tgvoip_log_file_printf('I', __VA_ARGS__);}
-#define LOGW(...) {__android_log_print(ANDROID_LOG_WARN, TAG, _LOG_WRAP(__VA_ARGS__)); tgvoip_log_file_printf('W', __VA_ARGS__);}
-#define LOGE(...) {__android_log_print(ANDROID_LOG_ERROR, TAG, _LOG_WRAP(__VA_ARGS__)); tgvoip_log_file_printf('E', __VA_ARGS__);}
+#define LOGV(...)                                                              \
+  {                                                                            \
+    __android_log_print(ANDROID_LOG_VERBOSE, TAG, _LOG_WRAP(__VA_ARGS__));     \
+    tgvoip_log_file_printf('V', __VA_ARGS__);                                  \
+  }
+#define LOGD(...)                                                              \
+  {                                                                            \
+    __android_log_print(ANDROID_LOG_DEBUG, TAG, _LOG_WRAP(__VA_ARGS__));       \
+    tgvoip_log_file_printf('D', __VA_ARGS__);                                  \
+  }
+#define LOGI(...)                                                              \
+  {                                                                            \
+    __android_log_print(ANDROID_LOG_INFO, TAG, _LOG_WRAP(__VA_ARGS__));        \
+    tgvoip_log_file_printf('I', __VA_ARGS__);                                  \
+  }
+#define LOGW(...)                                                              \
+  {                                                                            \
+    __android_log_print(ANDROID_LOG_WARN, TAG, _LOG_WRAP(__VA_ARGS__));        \
+    tgvoip_log_file_printf('W', __VA_ARGS__);                                  \
+  }
+#define LOGE(...)                                                              \
+  {                                                                            \
+    __android_log_print(ANDROID_LOG_ERROR, TAG, _LOG_WRAP(__VA_ARGS__));       \
+    tgvoip_log_file_printf('E', __VA_ARGS__);                                  \
+  }
 
 #elif defined(__APPLE__) && TARGET_OS_IPHONE && defined(TGVOIP_HAVE_TGLOG)
 
 #include "os/darwin/TGLogWrapper.h"
 
-#define LOGV(msg, ...) {__tgvoip_call_tglog("V/tgvoip: " msg, ##__VA_ARGS__); tgvoip_log_file_printf('V', msg, ##__VA_ARGS__);}
-#define LOGD(msg, ...) {__tgvoip_call_tglog("D/tgvoip: " msg, ##__VA_ARGS__); tgvoip_log_file_printf('D', msg, ##__VA_ARGS__);}
-#define LOGI(msg, ...) {__tgvoip_call_tglog("I/tgvoip: " msg, ##__VA_ARGS__); tgvoip_log_file_printf('I', msg, ##__VA_ARGS__);}
-#define LOGW(msg, ...) {__tgvoip_call_tglog("W/tgvoip: " msg, ##__VA_ARGS__); tgvoip_log_file_printf('W', msg, ##__VA_ARGS__);}
-#define LOGE(msg, ...) {__tgvoip_call_tglog("E/tgvoip: " msg, ##__VA_ARGS__); tgvoip_log_file_printf('E', msg, ##__VA_ARGS__);}
+#define LOGV(msg, ...)                                                         \
+  {                                                                            \
+    __tgvoip_call_tglog("V/tgvoip: " msg, ##__VA_ARGS__);                      \
+    tgvoip_log_file_printf('V', msg, ##__VA_ARGS__);                           \
+  }
+#define LOGD(msg, ...)                                                         \
+  {                                                                            \
+    __tgvoip_call_tglog("D/tgvoip: " msg, ##__VA_ARGS__);                      \
+    tgvoip_log_file_printf('D', msg, ##__VA_ARGS__);                           \
+  }
+#define LOGI(msg, ...)                                                         \
+  {                                                                            \
+    __tgvoip_call_tglog("I/tgvoip: " msg, ##__VA_ARGS__);                      \
+    tgvoip_log_file_printf('I', msg, ##__VA_ARGS__);                           \
+  }
+#define LOGW(msg, ...)                                                         \
+  {                                                                            \
+    __tgvoip_call_tglog("W/tgvoip: " msg, ##__VA_ARGS__);                      \
+    tgvoip_log_file_printf('W', msg, ##__VA_ARGS__);                           \
+  }
+#define LOGE(msg, ...)                                                         \
+  {                                                                            \
+    __tgvoip_call_tglog("E/tgvoip: " msg, ##__VA_ARGS__);                      \
+    tgvoip_log_file_printf('E', msg, ##__VA_ARGS__);                           \
+  }
 
 #elif defined(_WIN32) && defined(_DEBUG)
 
-#include <windows.h>
 #include <stdio.h>
+#include <windows.h>
 
-#define _TGVOIP_W32_LOG_PRINT(verb, msg, ...){ char __log_buf[1024]; snprintf(__log_buf, 1024, "%c/tgvoip: " msg "\n", verb, ##__VA_ARGS__); OutputDebugStringA(__log_buf); tgvoip_log_file_printf((char)verb, msg, __VA_ARGS__);}
+#define _TGVOIP_W32_LOG_PRINT(verb, msg, ...)                                  \
+  {                                                                            \
+    char __log_buf[1024];                                                      \
+    snprintf(__log_buf, 1024, "%c/tgvoip: " msg "\n", verb, ##__VA_ARGS__);    \
+    OutputDebugStringA(__log_buf);                                             \
+    tgvoip_log_file_printf((char)verb, msg, __VA_ARGS__);                      \
+  }
 
 #define LOGV(msg, ...) _TGVOIP_W32_LOG_PRINT('V', msg, ##__VA_ARGS__)
 #define LOGD(msg, ...) _TGVOIP_W32_LOG_PRINT('D', msg, ##__VA_ARGS__)
@@ -67,9 +121,16 @@ void tgvoip_log_spdlog(char level, const char* msg, ...);
 #include <stdio.h>
 
 #ifdef TGVOIP_USE_SPDLOG
-#define _TGVOIP_LOG_PRINT(verb, msg, ...) {tgvoip_log_spdlog(verb, msg, ##__VA_ARGS__);}
+#define _TGVOIP_LOG_PRINT(verb, msg, ...)                                      \
+  {                                                                            \
+    tgvoip_log_spdlog(verb, msg, ##__VA_ARGS__);                               \
+  }
 #else
-#define _TGVOIP_LOG_PRINT(verb, msg, ...) {printf("%c/tgvoip: " msg "\n", verb, ##__VA_ARGS__); tgvoip_log_file_printf(verb, msg, ##__VA_ARGS__);}
+#define _TGVOIP_LOG_PRINT(verb, msg, ...)                                      \
+  {                                                                            \
+    printf("%c/tgvoip: " msg "\n", verb, ##__VA_ARGS__);                       \
+    tgvoip_log_file_printf(verb, msg, ##__VA_ARGS__);                          \
+  }
 #endif
 
 #define LOGV(msg, ...) _TGVOIP_LOG_PRINT('V', msg, ##__VA_ARGS__)
@@ -85,23 +146,23 @@ void tgvoip_log_spdlog(char level, const char* msg, ...);
 #endif
 
 #ifdef TGVOIP_LOG_VERBOSITY
-#if TGVOIP_LOG_VERBOSITY<5
+#if TGVOIP_LOG_VERBOSITY < 5
 #undef LOGV
 #define LOGV(msg, ...)
 #endif
-#if TGVOIP_LOG_VERBOSITY<4
+#if TGVOIP_LOG_VERBOSITY < 4
 #undef LOGD
 #define LOGD(msg, ...)
 #endif
-#if TGVOIP_LOG_VERBOSITY<3
+#if TGVOIP_LOG_VERBOSITY < 3
 #undef LOGI
 #define LOGI(msg, ...)
 #endif
-#if TGVOIP_LOG_VERBOSITY<2
+#if TGVOIP_LOG_VERBOSITY < 2
 #undef LOGW
 #define LOGW(msg, ...)
 #endif
-#if TGVOIP_LOG_VERBOSITY<1
+#if TGVOIP_LOG_VERBOSITY < 1
 #undef LOGE
 #define LOGE(msg, ...)
 #endif

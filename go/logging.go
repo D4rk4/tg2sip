@@ -9,6 +9,7 @@ import (
 	client "github.com/zelenin/go-tdlib/client"
 	"gopkg.in/ini.v1"
 	"gopkg.in/natefinch/lumberjack.v2"
+	"tg2sip/tgvoip"
 )
 
 var (
@@ -43,6 +44,23 @@ func initLogging(cfg *ini.File) error {
 		// filter out verbose SIP message dumps
 		pjsipLog.Logger.AddHook(&sipMessageFilterHook{})
 	}
+
+	tgvoip.SetLogCallback(func(level byte, msg string) {
+		switch level {
+		case 'V':
+			tgvoipLog.Trace(msg)
+		case 'D':
+			tgvoipLog.Debug(msg)
+		case 'I':
+			tgvoipLog.Info(msg)
+		case 'W':
+			tgvoipLog.Warn(msg)
+		case 'E':
+			tgvoipLog.Error(msg)
+		default:
+			tgvoipLog.Info(msg)
+		}
+	})
 
 	// configure TDLib logging
 	tdlibLevel := int32(sec.Key("tdlib").MustInt(3))

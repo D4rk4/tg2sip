@@ -8,6 +8,7 @@ package tgvoip
 #include <stdlib.h>
 #include "VoIPController.h"
 #include "NetworkSocket.h"
+#include "logging.h"
 #include <vector>
 
 using tgvoip::VoIPController;
@@ -57,6 +58,9 @@ static void tgvoip_set_callbacks(VoIPController* c, void* user) {
         [user](int16_t* data, size_t len){ goOutputCallback(data, len, user); }
     );
 }
+
+extern void goTgvoipLog(char level, const char* msg);
+static void tgvoip_init_logger() { tgvoip_set_log_callback(goTgvoipLog); }
 */
 import "C"
 
@@ -138,4 +142,15 @@ func (c *controller) Close() {
 	if c.handle != 0 {
 		c.handle.Delete()
 	}
+}
+
+//export goTgvoipLog
+func goTgvoipLog(level C.char, msg *C.char) {
+	if logCallback != nil {
+		logCallback(byte(level), C.GoString(msg))
+	}
+}
+
+func init() {
+	C.tgvoip_init_logger()
 }

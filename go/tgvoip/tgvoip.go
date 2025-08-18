@@ -1,5 +1,13 @@
 package tgvoip
 
+// LogCallback receives internal tgvoip log messages.
+var logCallback func(level byte, msg string)
+
+// SetLogCallback registers a handler for internal tgvoip logs.
+func SetLogCallback(cb func(level byte, msg string)) {
+	logCallback = cb
+}
+
 // Endpoint describes a remote audio endpoint.
 type Endpoint struct {
 	ID   int64
