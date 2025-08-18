@@ -468,10 +468,7 @@ func (g *Gateway) handleInfo(req sip.Request, tx sip.ServerTransaction) {
 	if cid != nil {
 		callID = cid.String()
 	}
-	body := ""
-	if b := req.Body(); b != nil {
-		body = b.String()
-	}
+	body := req.Body()
 	coreLog.Infof("received SIP INFO: %s", callID)
 	g.events <- MediaEvent{CallID: callID, Body: body}
 	g.internalEvents <- internalEvent{ctxID: callID, typ: evWaitDTMF}

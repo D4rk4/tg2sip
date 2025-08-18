@@ -59,20 +59,19 @@ func startTG(ctx context.Context, cfg *Settings) error {
 	}
 
 	params := &client.SetTdlibParametersRequest{
-		UseTestDc:              false,
-		DatabaseDirectory:      filepath.Join(dataDir, "database"),
-		FilesDirectory:         filepath.Join(dataDir, "files"),
-		UseFileDatabase:        true,
-		UseChatInfoDatabase:    true,
-		UseMessageDatabase:     true,
-		UseSecretChats:         false,
-		ApiId:                  int32(apiID),
-		ApiHash:                apiHash,
-		SystemLanguageCode:     cfg.SystemLanguageCode(),
-		DeviceModel:            cfg.DeviceModel(),
-		SystemVersion:          cfg.SystemVersion(),
-		ApplicationVersion:     cfg.ApplicationVersion(),
-		EnableStorageOptimizer: true,
+		UseTestDc:           false,
+		DatabaseDirectory:   filepath.Join(dataDir, "database"),
+		FilesDirectory:      filepath.Join(dataDir, "files"),
+		UseFileDatabase:     true,
+		UseChatInfoDatabase: true,
+		UseMessageDatabase:  true,
+		UseSecretChats:      false,
+		ApiId:               int32(apiID),
+		ApiHash:             apiHash,
+		SystemLanguageCode:  cfg.SystemLanguageCode(),
+		DeviceModel:         cfg.DeviceModel(),
+		SystemVersion:       cfg.SystemVersion(),
+		ApplicationVersion:  cfg.ApplicationVersion(),
 	}
 
 	authorizer := client.ClientAuthorizer(params)
@@ -106,7 +105,7 @@ func startTG(ctx context.Context, cfg *Settings) error {
 		}
 	}
 
-	me, err := tgClient.GetMe(context.Background())
+	me, err := tgClient.GetMe()
 	if err != nil {
 		return fmt.Errorf("get me: %w", err)
 	}
