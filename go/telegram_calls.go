@@ -25,7 +25,7 @@ func createTelegramCall(cl *client.Client, userID int64) error {
 // acceptTelegramCall accepts an incoming Telegram call.
 func acceptTelegramCall(cl *client.Client, callID int64) error {
 	protocol := &client.CallProtocol{UdpP2p: true, UdpReflector: true, MinLayer: 65, MaxLayer: 92}
-	if _, err := cl.AcceptCall(&client.AcceptCallRequest{CallId: callID, Protocol: protocol}); err != nil {
+	if _, err := cl.AcceptCall(&client.AcceptCallRequest{CallId: int32(callID), Protocol: protocol}); err != nil {
 		return err
 	}
 
