@@ -65,6 +65,14 @@ var dtmfRegex = regexp.MustCompile(`^[0-9A-D*#]+$`)
 var retryAfterRe = regexp.MustCompile(`(?i)retry after (\d+)`)
 var peerFloodRe = regexp.MustCompile(`(?i)PEER_FLOOD`)
 
+const (
+	statusTrying              = sip.StatusCode(100)
+	statusOK                  = sip.StatusCode(200)
+	statusNotFound            = sip.StatusCode(404)
+	statusInternalServerError = sip.StatusCode(500)
+	statusServiceUnavailable  = sip.StatusCode(503)
+)
+
 func parseFloodError(err error) (time.Duration, bool, bool) {
 	var respErr client.ResponseError
 	if !errors.As(err, &respErr) {
@@ -202,7 +210,7 @@ func (g *Gateway) handleTelegramCall(u *client.UpdateCall) {
 	if _, ok := u.Call.State.(*client.CallStatePending); !ok {
 		return
 	}
-	if err := acceptTelegramCall(g.tgClient, u.Call.Id); err != nil {
+	if err := acceptTelegramCall(g.tgClient, int64(u.Call.Id)); err != nil {
 		coreLog.Warnf("acceptCall failed: %v", err)
 		return
 	}
@@ -211,7 +219,7 @@ func (g *Gateway) handleTelegramCall(u *client.UpdateCall) {
 		coreLog.Warnf("getUser failed: %v", err)
 		return
 	}
-	headers := buildUserHeaders(u.Call.Id, user)
+	headers := buildUserHeaders(int64(u.Call.Id), user)
 	if err := g.sipClient.Dial(context.Background(), "tg", g.callback, headers); err != nil {
 		coreLog.Warnf("SIP dial failed: %v", err)
 	}
@@ -330,7 +338,7 @@ func (g *Gateway) handleInvite(req sip.Request, tx sip.ServerTransaction) {
 			wait := int(g.blockUntil.Sub(now).Seconds())
 			coreLog.Warnf("dropping call due to temp TG block for %d seconds", wait)
 			if tx != nil {
-				g.sipServer.RespondOnRequest(req, sip.StatusServiceUnavailable,
+				g.sipServer.RespondOnRequest(req, statusServiceUnavailable,
 					fmt.Sprintf("FLOOD_WAIT %d", wait), "", nil)
 			}
 			return
@@ -353,14 +361,14 @@ func (g *Gateway) handleInvite(req sip.Request, tx sip.ServerTransaction) {
 			wait += g.extraWait
 			g.blockUntil = time.Now().Add(wait)
 			if tx != nil {
-				g.sipServer.RespondOnRequest(req, sip.StatusServiceUnavailable,
+				g.sipServer.RespondOnRequest(req, statusServiceUnavailable,
 					fmt.Sprintf("FLOOD_WAIT %d", int(wait.Seconds())), "", nil)
 			}
 			return
 		}
 		coreLog.Warnf("parse headers failed: %v", err)
 		if tx != nil {
-			g.sipServer.RespondOnRequest(req, sip.StatusInternalServerError, "Internal error", "", nil)
+			g.sipServer.RespondOnRequest(req, statusInternalServerError, "Internal error", "", nil)
 		}
 		return
 	}
@@ -374,14 +382,14 @@ func (g *Gateway) handleInvite(req sip.Request, tx sip.ServerTransaction) {
 				wait += g.extraWait
 				g.blockUntil = time.Now().Add(wait)
 				if tx != nil {
-					g.sipServer.RespondOnRequest(req, sip.StatusServiceUnavailable,
+					g.sipServer.RespondOnRequest(req, statusServiceUnavailable,
 						fmt.Sprintf("FLOOD_WAIT %d", int(wait.Seconds())), "", nil)
 				}
 				return
 			}
 			coreLog.Warnf("resolve user failed: %v", err)
 			if tx != nil {
-				g.sipServer.RespondOnRequest(req, sip.StatusInternalServerError, "Internal error", "", nil)
+				g.sipServer.RespondOnRequest(req, statusInternalServerError, "Internal error", "", nil)
 			}
 			return
 		}
@@ -389,7 +397,7 @@ func (g *Gateway) handleInvite(req sip.Request, tx sip.ServerTransaction) {
 	if !ok {
 		coreLog.Warnf("unknown extension %s", ext)
 		if tx != nil {
-			g.sipServer.RespondOnRequest(req, sip.StatusNotFound, "Not Found", "", nil)
+			g.sipServer.RespondOnRequest(req, statusNotFound, "Not Found", "", nil)
 		}
 		return
 	}
@@ -402,7 +410,7 @@ func (g *Gateway) handleInvite(req sip.Request, tx sip.ServerTransaction) {
 			wait += g.extraWait
 			g.blockUntil = time.Now().Add(wait)
 			if tx != nil {
-				g.sipServer.RespondOnRequest(req, sip.StatusServiceUnavailable,
+				g.sipServer.RespondOnRequest(req, statusServiceUnavailable,
 					fmt.Sprintf("FLOOD_WAIT %d", int(wait.Seconds())), "", nil)
 			}
 			return
@@ -422,7 +430,7 @@ func (g *Gateway) handleInvite(req sip.Request, tx sip.ServerTransaction) {
 	g.internalEvents <- internalEvent{ctxID: callID, typ: evIncoming}
 
 	if tx != nil {
-		g.sipServer.RespondOnRequest(req, sip.StatusTrying, "Trying", "", nil)
+		g.sipServer.RespondOnRequest(req, statusTrying, "Trying", "", nil)
 	}
 }
 
@@ -449,7 +457,7 @@ func (g *Gateway) handleBye(req sip.Request, tx sip.ServerTransaction) {
 	g.events <- CallStateEvent{CallID: callID, State: "ended"}
 	g.internalEvents <- internalEvent{ctxID: callID, typ: evCleanup}
 	if tx != nil {
-		g.sipServer.RespondOnRequest(req, sip.StatusOK, "OK", "", nil)
+		g.sipServer.RespondOnRequest(req, statusOK, "OK", "", nil)
 	}
 }
 
@@ -468,7 +476,7 @@ func (g *Gateway) handleInfo(req sip.Request, tx sip.ServerTransaction) {
 	g.events <- MediaEvent{CallID: callID, Body: body}
 	g.internalEvents <- internalEvent{ctxID: callID, typ: evWaitDTMF}
 	if tx != nil {
-		g.sipServer.RespondOnRequest(req, sip.StatusOK, "OK", "", nil)
+		g.sipServer.RespondOnRequest(req, statusOK, "OK", "", nil)
 	}
 }
 
