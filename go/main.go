@@ -110,7 +110,7 @@ func startTG(ctx context.Context, cfg *Settings) error {
 	if err != nil {
 		return fmt.Errorf("get me: %w", err)
 	}
-	coreLog.Infof("telegram authorized as %s %s (@%s)", me.FirstName, me.LastName, me.Username)
+	coreLog.Infof("telegram authorized as %s %s (@%s)", me.FirstName, me.LastName, getUsername(me))
 
 	go func() {
 		<-ctx.Done()

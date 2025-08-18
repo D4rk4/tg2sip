@@ -75,8 +75,13 @@ func (c *ContactCache) addLocked(u *client.User) {
 	if u == nil {
 		return
 	}
-	if u.Username != "" {
-		c.usernameToID[strings.ToLower(u.Username)] = u.Id
+	if u.Usernames != nil {
+		if u.Usernames.EditableUsername != "" {
+			c.usernameToID[strings.ToLower(u.Usernames.EditableUsername)] = u.Id
+		}
+		for _, uname := range u.Usernames.ActiveUsernames {
+			c.usernameToID[strings.ToLower(uname)] = u.Id
+		}
 	}
 	if u.PhoneNumber != "" {
 		c.phoneToID[u.PhoneNumber] = u.Id

@@ -109,7 +109,7 @@ func (g *Gateway) Start(ctx context.Context) error {
 		case update := <-listener.Updates:
 			switch u := update.(type) {
 			case *client.UpdateCall:
-				coreLog.Infof("received telegram call update: %d", u.Call.ID)
+				coreLog.Infof("received telegram call update: %d", u.Call.Id)
 				g.handleTelegramCall(u)
 			case *client.UpdateUser:
 				g.contacts.Update(u.User)
@@ -202,7 +202,7 @@ func (g *Gateway) handleTelegramCall(u *client.UpdateCall) {
 	if _, ok := u.Call.State.(*client.CallStatePending); !ok {
 		return
 	}
-	if err := acceptTelegramCall(g.tgClient, u.Call.ID); err != nil {
+	if err := acceptTelegramCall(g.tgClient, u.Call.Id); err != nil {
 		coreLog.Warnf("acceptCall failed: %v", err)
 		return
 	}
@@ -211,7 +211,7 @@ func (g *Gateway) handleTelegramCall(u *client.UpdateCall) {
 		coreLog.Warnf("getUser failed: %v", err)
 		return
 	}
-	headers := buildUserHeaders(u.Call.ID, user)
+	headers := buildUserHeaders(u.Call.Id, user)
 	if err := g.sipClient.Dial(context.Background(), "tg", g.callback, headers); err != nil {
 		coreLog.Warnf("SIP dial failed: %v", err)
 	}
@@ -302,8 +302,8 @@ func buildUserHeaders(callID int64, u *client.User) map[string]string {
 	if u.LastName != "" {
 		headers["X-TG-LastName"] = u.LastName
 	}
-	if u.Username != "" {
-		headers["X-TG-Username"] = u.Username
+	if uname := getUsername(u); uname != "" {
+		headers["X-TG-Username"] = uname
 	}
 	if u.PhoneNumber != "" {
 		headers["X-TG-Phone"] = u.PhoneNumber
@@ -313,8 +313,14 @@ func buildUserHeaders(callID int64, u *client.User) map[string]string {
 
 // handleInvite creates a call context and emits a call state event.
 func (g *Gateway) handleInvite(req sip.Request, tx sip.ServerTransaction) {
-	callID := req.CallID().String()
-	coreLog.Infof("received SIP INVITE: %s -> %s", req.From(), req.To())
+	cid, _ := req.CallID()
+	callID := ""
+	if cid != nil {
+		callID = cid.String()
+	}
+	fromHdr, _ := req.From()
+	toHdr, _ := req.To()
+	coreLog.Infof("received SIP INVITE: %s -> %s", fromHdr, toHdr)
 
 	now := time.Now()
 	if !g.blockUntil.IsZero() {
@@ -331,10 +337,9 @@ func (g *Gateway) handleInvite(req sip.Request, tx sip.ServerTransaction) {
 		}
 	}
 
-	to, _ := req.To()
 	ext := ""
-	if to != nil && to.Address != nil {
-		if u := to.Address.User(); u != nil {
+	if toHdr != nil && toHdr.Address != nil {
+		if u := toHdr.Address.User(); u != nil {
 			ext = u.String()
 		}
 	}
@@ -423,7 +428,11 @@ func (g *Gateway) handleInvite(req sip.Request, tx sip.ServerTransaction) {
 
 // handleAck emits an answered state for an existing call.
 func (g *Gateway) handleAck(req sip.Request, tx sip.ServerTransaction) {
-	callID := req.CallID().String()
+	cid, _ := req.CallID()
+	callID := ""
+	if cid != nil {
+		callID = cid.String()
+	}
 	coreLog.Infof("received SIP ACK: %s", callID)
 	g.events <- CallStateEvent{CallID: callID, State: "answered"}
 	g.internalEvents <- internalEvent{ctxID: callID, typ: evWaitMedia}
@@ -431,7 +440,11 @@ func (g *Gateway) handleAck(req sip.Request, tx sip.ServerTransaction) {
 
 // handleBye cleans up the call context and emits an ended state.
 func (g *Gateway) handleBye(req sip.Request, tx sip.ServerTransaction) {
-	callID := req.CallID().String()
+	cid, _ := req.CallID()
+	callID := ""
+	if cid != nil {
+		callID = cid.String()
+	}
 	coreLog.Infof("received SIP BYE: %s", callID)
 	g.events <- CallStateEvent{CallID: callID, State: "ended"}
 	g.internalEvents <- internalEvent{ctxID: callID, typ: evCleanup}
@@ -442,7 +455,11 @@ func (g *Gateway) handleBye(req sip.Request, tx sip.ServerTransaction) {
 
 // handleInfo emits a media event for INFO requests.
 func (g *Gateway) handleInfo(req sip.Request, tx sip.ServerTransaction) {
-	callID := req.CallID().String()
+	cid, _ := req.CallID()
+	callID := ""
+	if cid != nil {
+		callID = cid.String()
+	}
 	body := ""
 	if b := req.Body(); b != nil {
 		body = b.String()
