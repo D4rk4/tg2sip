@@ -1,6 +1,7 @@
 package main
 
 import (
+	"regexp"
 	"strings"
 	"sync"
 
@@ -95,16 +96,36 @@ func (c *ContactCache) Resolve(ext string) (int64, bool) {
 	return 0, false
 }
 
+var digitsOnly = regexp.MustCompile(`^\d+$`)
+
 // SearchAndAdd searches contact by query and adds it to cache.
-func (c *ContactCache) SearchAndAdd(cl *client.Client, query string) (int64, bool) {
+func (c *ContactCache) SearchAndAdd(cl *client.Client, query string) (int64, bool, error) {
 	res, err := cl.SearchContacts(&client.SearchContactsRequest{Query: query, Limit: 1})
-	if err != nil || len(res.UserIds) == 0 {
-		return 0, false
+	if err != nil {
+		return 0, false, err
+	}
+	if len(res.UserIds) == 0 && digitsOnly.MatchString(query) {
+		imp, err := cl.ImportContacts(&client.ImportContactsRequest{Contacts: []*client.Contact{{PhoneNumber: query}}})
+		if err != nil {
+			return 0, false, err
+		}
+		if len(imp.UserIds) == 0 || imp.UserIds[0] == 0 {
+			return 0, false, nil
+		}
+		u, err := cl.GetUser(&client.GetUserRequest{UserId: imp.UserIds[0]})
+		if err != nil {
+			return 0, false, err
+		}
+		c.Update(u)
+		return u.Id, true, nil
+	}
+	if len(res.UserIds) == 0 {
+		return 0, false, nil
 	}
 	u, err := cl.GetUser(&client.GetUserRequest{UserId: res.UserIds[0]})
 	if err != nil {
-		return 0, false
+		return 0, false, err
 	}
 	c.Update(u)
-	return u.Id, true
+	return u.Id, true, nil
 }
