@@ -4,13 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"os/signal"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	gosip "github.com/ghettovoice/gosip"
@@ -124,6 +121,11 @@ func (g *Gateway) Start(ctx context.Context) error {
 		case ie := <-g.internalEvents:
 			g.processInternalEvent(ie)
 		case <-ctx.Done():
+			g.mu.Lock()
+			for _, c := range g.calls {
+				g.cleanUp(c)
+			}
+			g.mu.Unlock()
 			return nil
 		}
 	}
@@ -454,11 +456,9 @@ func (g *Gateway) handleInfo(req sip.Request, tx sip.ServerTransaction) {
 }
 
 // startGateway initializes and starts the gateway component.
-func startGateway(cfg *Settings) error {
+func startGateway(ctx context.Context, cfg *Settings) error {
 	coreLog.Info("starting gateway")
 	callback := cfg.CallbackURI()
 	gw := NewGateway(sipServer, tgClient, callback, cfg.ExtraWaitTime(), cfg.PeerFloodTime())
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	return gw.Start(ctx)
 }

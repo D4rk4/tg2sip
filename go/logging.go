@@ -15,6 +15,7 @@ var (
 	coreLog   *logrus.Entry
 	pjsipLog  *logrus.Entry
 	tgvoipLog *logrus.Entry
+	logFile   *lumberjack.Logger
 )
 
 // sipMessages controls whether full SIP messages are logged.
@@ -27,15 +28,15 @@ func initLogging(cfg *ini.File) error {
 	consoleMin := toLogrusLevel(sec.Key("console_min_level").MustInt(0))
 	fileMin := toLogrusLevel(sec.Key("file_min_level").MustInt(0))
 
-	fileWriter := &lumberjack.Logger{
+	logFile = &lumberjack.Logger{
 		Filename:   "tg2sip.log",
 		MaxSize:    100, // megabytes
 		MaxBackups: 1,
 	}
 
-	coreLog = newLogger("core", toLogrusLevel(sec.Key("core").MustInt(2)), consoleMin, fileMin, fileWriter)
-	pjsipLog = newLogger("pjsip", toLogrusLevel(sec.Key("pjsip").MustInt(2)), consoleMin, fileMin, fileWriter)
-	tgvoipLog = newLogger("tgvoip", toLogrusLevel(sec.Key("tgvoip").MustInt(5)), consoleMin, fileMin, fileWriter)
+	coreLog = newLogger("core", toLogrusLevel(sec.Key("core").MustInt(2)), consoleMin, fileMin, logFile)
+	pjsipLog = newLogger("pjsip", toLogrusLevel(sec.Key("pjsip").MustInt(2)), consoleMin, fileMin, logFile)
+	tgvoipLog = newLogger("tgvoip", toLogrusLevel(sec.Key("tgvoip").MustInt(5)), consoleMin, fileMin, logFile)
 
 	sipMessages = sec.Key("sip_messages").MustBool(true)
 	if !sipMessages {
@@ -50,6 +51,14 @@ func initLogging(cfg *ini.File) error {
 	}
 	_, err := client.SetLogVerbosityLevel(&client.SetLogVerbosityLevelRequest{NewVerbosityLevel: tdlibLevel})
 	return err
+}
+
+// closeLogging flushes and closes log files.
+func closeLogging() {
+	if logFile != nil {
+		_ = logFile.Close()
+	}
+	_, _ = client.SetLogStream(&client.SetLogStreamRequest{LogStream: &client.LogStreamEmpty{}})
 }
 
 // writerHook writes logs to the specified writer for provided levels.
