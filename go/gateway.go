@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -29,10 +30,13 @@ type Gateway struct {
 	contacts       *ContactCache
 	callback       string
 	mu             sync.Mutex
+	blockUntil     time.Time
+	extraWait      time.Duration
+	peerFlood      time.Duration
 }
 
 // NewGateway creates a new Gateway instance.
-func NewGateway(sipSrv gosip.Server, tgCl *client.Client, callback string) *Gateway {
+func NewGateway(sipSrv gosip.Server, tgCl *client.Client, callback string, extraWait, peerFlood time.Duration) *Gateway {
 	return &Gateway{
 		sipServer:      sipSrv,
 		tgClient:       tgCl,
@@ -42,6 +46,8 @@ func NewGateway(sipSrv gosip.Server, tgCl *client.Client, callback string) *Gate
 		calls:          make(map[string]*Context),
 		contacts:       NewContactCache(),
 		callback:       callback,
+		extraWait:      extraWait,
+		peerFlood:      peerFlood,
 	}
 }
 
@@ -59,6 +65,25 @@ type MediaEvent struct {
 
 // dtmfRegex matches valid DTMF digit sequences.
 var dtmfRegex = regexp.MustCompile(`^[0-9A-D*#]+$`)
+
+var retryAfterRe = regexp.MustCompile(`(?i)retry after (\d+)`)
+var peerFloodRe = regexp.MustCompile(`(?i)PEER_FLOOD`)
+
+func parseFloodError(err error) (time.Duration, bool, bool) {
+	var respErr client.ResponseError
+	if !errors.As(err, &respErr) {
+		return 0, false, false
+	}
+	if m := retryAfterRe.FindStringSubmatch(respErr.Err.Message); len(m) > 1 {
+		if s, e := strconv.Atoi(m[1]); e == nil {
+			return time.Duration(s) * time.Second, false, true
+		}
+	}
+	if peerFloodRe.MatchString(respErr.Err.Message) {
+		return 0, true, true
+	}
+	return 0, false, false
+}
 
 // Start runs the gateway until ctx is canceled.
 func (g *Gateway) Start(ctx context.Context) error {
@@ -122,57 +147,47 @@ func (g *Gateway) refreshContactsLoop(ctx context.Context) {
 }
 
 // parseUserFromHeaders checks custom SIP headers for Telegram user info.
-func (g *Gateway) parseUserFromHeaders(req sip.Request) (int64, bool) {
+func (g *Gateway) parseUserFromHeaders(req sip.Request) (int64, bool, error) {
 	if hdrs := req.GetHeaders("X-TG-ID"); len(hdrs) > 0 {
 		if id, err := strconv.ParseInt(hdrs[0].Value(), 10, 64); err == nil {
-			return id, true
+			return id, true, nil
+		} else {
+			return 0, false, err
 		}
 	}
 	if hdrs := req.GetHeaders("X-TG-Username"); len(hdrs) > 0 {
-		name := hdrs[0].Value()
-		if id, ok := g.contacts.Resolve(strings.ToLower(name)); ok {
-			return id, true
-		}
-		if id, ok := g.contacts.SearchAndAdd(g.tgClient, name); ok {
-			return id, true
-		}
+		return g.resolveUser("tg#" + hdrs[0].Value())
 	}
 	if hdrs := req.GetHeaders("X-TG-Phone"); len(hdrs) > 0 {
-		phone := hdrs[0].Value()
-		if id, ok := g.contacts.Resolve(phone); ok {
-			return id, true
-		}
-		if id, ok := g.contacts.SearchAndAdd(g.tgClient, phone); ok {
-			return id, true
-		}
+		return g.resolveUser("+" + hdrs[0].Value())
 	}
-	return 0, false
+	return 0, false, nil
 }
 
 // resolveUser resolves extension patterns like tg#username, +phone or numeric ID.
-func (g *Gateway) resolveUser(ext string) (int64, bool) {
+func (g *Gateway) resolveUser(ext string) (int64, bool, error) {
 	if ext == "" {
-		return 0, false
+		return 0, false, nil
 	}
 	switch {
 	case strings.HasPrefix(ext, "tg#"):
 		name := ext[3:]
 		if id, ok := g.contacts.Resolve(strings.ToLower(name)); ok {
-			return id, true
+			return id, true, nil
 		}
 		return g.contacts.SearchAndAdd(g.tgClient, name)
 	case strings.HasPrefix(ext, "+"):
 		phone := ext[1:]
 		if id, ok := g.contacts.Resolve(phone); ok {
-			return id, true
+			return id, true, nil
 		}
 		return g.contacts.SearchAndAdd(g.tgClient, phone)
 	default:
 		if id, err := strconv.ParseInt(ext, 10, 64); err == nil {
-			return id, true
+			return id, true, nil
 		}
 		if id, ok := g.contacts.Resolve(ext); ok {
-			return id, true
+			return id, true, nil
 		}
 		return g.contacts.SearchAndAdd(g.tgClient, ext)
 	}
@@ -300,6 +315,21 @@ func (g *Gateway) handleInvite(req sip.Request, tx sip.ServerTransaction) {
 	callID := req.CallID().String()
 	coreLog.Infof("received SIP INVITE: %s -> %s", req.From(), req.To())
 
+	now := time.Now()
+	if !g.blockUntil.IsZero() {
+		if now.After(g.blockUntil) {
+			g.blockUntil = time.Time{}
+		} else {
+			wait := int(g.blockUntil.Sub(now).Seconds())
+			coreLog.Warnf("dropping call due to temp TG block for %d seconds", wait)
+			if tx != nil {
+				g.sipServer.RespondOnRequest(req, sip.StatusServiceUnavailable,
+					fmt.Sprintf("FLOOD_WAIT %d", wait), "", nil)
+			}
+			return
+		}
+	}
+
 	to, _ := req.To()
 	ext := ""
 	if to != nil && to.Address != nil {
@@ -308,9 +338,47 @@ func (g *Gateway) handleInvite(req sip.Request, tx sip.ServerTransaction) {
 		}
 	}
 
-	userID, ok := g.parseUserFromHeaders(req)
+	userID, ok, err := g.parseUserFromHeaders(req)
+	if err != nil {
+		if wait, peer, matched := parseFloodError(err); matched {
+			if peer {
+				wait = g.peerFlood
+			}
+			wait += g.extraWait
+			g.blockUntil = time.Now().Add(wait)
+			if tx != nil {
+				g.sipServer.RespondOnRequest(req, sip.StatusServiceUnavailable,
+					fmt.Sprintf("FLOOD_WAIT %d", int(wait.Seconds())), "", nil)
+			}
+			return
+		}
+		coreLog.Warnf("parse headers failed: %v", err)
+		if tx != nil {
+			g.sipServer.RespondOnRequest(req, sip.StatusInternalServerError, "Internal error", "", nil)
+		}
+		return
+	}
 	if !ok {
-		userID, ok = g.resolveUser(ext)
+		userID, ok, err = g.resolveUser(ext)
+		if err != nil {
+			if wait, peer, matched := parseFloodError(err); matched {
+				if peer {
+					wait = g.peerFlood
+				}
+				wait += g.extraWait
+				g.blockUntil = time.Now().Add(wait)
+				if tx != nil {
+					g.sipServer.RespondOnRequest(req, sip.StatusServiceUnavailable,
+						fmt.Sprintf("FLOOD_WAIT %d", int(wait.Seconds())), "", nil)
+				}
+				return
+			}
+			coreLog.Warnf("resolve user failed: %v", err)
+			if tx != nil {
+				g.sipServer.RespondOnRequest(req, sip.StatusInternalServerError, "Internal error", "", nil)
+			}
+			return
+		}
 	}
 	if !ok {
 		coreLog.Warnf("unknown extension %s", ext)
@@ -321,7 +389,21 @@ func (g *Gateway) handleInvite(req sip.Request, tx sip.ServerTransaction) {
 	}
 
 	if err := createTelegramCall(g.tgClient, userID); err != nil {
+		if wait, peer, matched := parseFloodError(err); matched {
+			if peer {
+				wait = g.peerFlood
+			}
+			wait += g.extraWait
+			g.blockUntil = time.Now().Add(wait)
+			if tx != nil {
+				g.sipServer.RespondOnRequest(req, sip.StatusServiceUnavailable,
+					fmt.Sprintf("FLOOD_WAIT %d", int(wait.Seconds())), "", nil)
+			}
+			return
+		}
 		coreLog.Warnf("createCall failed: %v", err)
+	} else {
+		g.blockUntil = time.Time{}
 	}
 
 	ctx := &Context{ID: callID, SIPCallID: callID, UserID: userID, State: StateIncoming}
@@ -376,7 +458,10 @@ func (g *Gateway) handleInfo(req sip.Request, tx sip.ServerTransaction) {
 func startGateway(cfg *ini.File) error {
 	coreLog.Info("starting gateway")
 	callback := cfg.Section("sip").Key("callback_uri").String()
-	gw := NewGateway(sipServer, tgClient, callback)
+	other := cfg.Section("other")
+	extra := time.Duration(other.Key("extra_wait_time").MustInt(0)) * time.Second
+	pf := time.Duration(other.Key("peer_flood_time").MustInt(86400)) * time.Second
+	gw := NewGateway(sipServer, tgClient, callback, extra, pf)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	return gw.Start(ctx)
