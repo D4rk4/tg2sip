@@ -8,3 +8,5 @@ services:
     ports:
       - "5060:5060/udp"
     restart: unless-stopped
+    stdin_open: true    # keep STDIN open for interactive login
+    tty: true           # allocate a pseudo-TTY for login prompts
