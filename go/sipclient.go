@@ -167,7 +167,7 @@ func (c *SIPClient) Answer(ctx context.Context, callID string) error {
 		return fmt.Errorf("call %s not found", callID)
 	}
 
-	res := sip.NewResponseFromRequest("", sess.inviteReq, sip.StatusOK, "OK", "")
+	res := sip.NewResponseFromRequest("", sess.inviteReq, statusOK, "OK", "")
 	tag := util.RandString(8)
 	if toHdr, ok := res.To(); ok {
 		toHdr.Params = toHdr.Params.Add("tag", sip.String{Str: tag})
