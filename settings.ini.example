@@ -52,8 +52,8 @@ api_hash=                       ; Application identifier hash for Telegram API a
 
 ;application_version=1.0
 
-;database_folder=               ; The path to the directory for the persistent TDLib database;
-                                ; if empty, the current working directory will be used.
+database_folder=/data           ; The path to the directory for the persistent TDLib database;
+                                ; use a volume-mounted directory for persistence across restarts.
 
 ;udp_p2p=false                  ; True, if UDP peer-to-peer connections are supported
 

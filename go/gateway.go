@@ -65,6 +65,17 @@ var dtmfRegex = regexp.MustCompile(`^[0-9A-D*#]+$`)
 var retryAfterRe = regexp.MustCompile(`(?i)retry after (\d+)`)
 var peerFloodRe = regexp.MustCompile(`(?i)PEER_FLOOD`)
 
+func formatE164(phone string) string {
+	phone = strings.TrimSpace(phone)
+	if phone == "" {
+		return ""
+	}
+	if strings.HasPrefix(phone, "+") {
+		return phone
+	}
+	return "+" + phone
+}
+
 const (
 	statusTrying              = sip.StatusCode(100)
 	statusOK                  = sip.StatusCode(200)
@@ -168,7 +179,11 @@ func (g *Gateway) parseUserFromHeaders(req sip.Request) (int64, bool, error) {
 		return g.resolveUser("tg#" + hdrs[0].Value())
 	}
 	if hdrs := req.GetHeaders("X-TG-Phone"); len(hdrs) > 0 {
-		return g.resolveUser("+" + hdrs[0].Value())
+		phone := hdrs[0].Value()
+		if !strings.HasPrefix(phone, "+") {
+			phone = "+" + phone
+		}
+		return g.resolveUser(phone)
 	}
 	return 0, false, nil
 }
@@ -220,6 +235,13 @@ func (g *Gateway) handleTelegramCall(u *client.UpdateCall) {
 		return
 	}
 	headers := buildUserHeaders(int64(u.Call.Id), user)
+	callID := fmt.Sprintf("%d", u.Call.Id)
+	ctx := &Context{ID: callID, TGCallID: int64(u.Call.Id), UserID: user.Id, State: StateOutgoing}
+	g.mu.Lock()
+	g.calls[callID] = ctx
+	g.mu.Unlock()
+	g.events <- CallStateEvent{CallID: callID, State: "outgoing"}
+	g.internalEvents <- internalEvent{ctxID: callID, typ: evOutgoing}
 	if err := g.sipClient.Dial(context.Background(), "tg", g.callback, headers); err != nil {
 		coreLog.Warnf("SIP dial failed: %v", err)
 	}
@@ -313,8 +335,8 @@ func buildUserHeaders(callID int64, u *client.User) map[string]string {
 	if uname := getUsername(u); uname != "" {
 		headers["X-TG-Username"] = uname
 	}
-	if u.PhoneNumber != "" {
-		headers["X-TG-Phone"] = u.PhoneNumber
+	if phone := formatE164(u.PhoneNumber); phone != "" {
+		headers["X-TG-Phone"] = phone
 	}
 	return headers
 }

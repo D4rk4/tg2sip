@@ -5,6 +5,7 @@ services:
     image: tg2sip-go
     volumes:
       - ./settings.ini:/app/settings.ini:ro
+      - ./data:/data
     ports:
       - "5060:5060/udp"
     restart: unless-stopped
