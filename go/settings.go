@@ -25,6 +25,7 @@ type Settings struct {
 	deviceModel        string
 	systemVersion      string
 	applicationVersion string
+	phoneNumber        string
 
 	udpP2P       bool
 	udpReflector bool
@@ -70,6 +71,7 @@ func LoadSettings(cfg *ini.File) (*Settings, error) {
 	s.deviceModel = sec.Key("device_model").MustString("PC")
 	s.systemVersion = sec.Key("system_version").MustString("Linux")
 	s.applicationVersion = sec.Key("application_version").MustString("1.0")
+	s.phoneNumber = sec.Key("phone_number").String()
 
 	s.udpP2P = sec.Key("udp_p2p").MustBool(false)
 	s.udpReflector = sec.Key("udp_reflector").MustBool(true)
@@ -116,6 +118,7 @@ func (s *Settings) SystemLanguageCode() string { return s.systemLanguageCode }
 func (s *Settings) DeviceModel() string        { return s.deviceModel }
 func (s *Settings) SystemVersion() string      { return s.systemVersion }
 func (s *Settings) ApplicationVersion() string { return s.applicationVersion }
+func (s *Settings) PhoneNumber() string        { return s.phoneNumber }
 
 func (s *Settings) UDPP2P() bool       { return s.udpP2P }
 func (s *Settings) UDPReflector() bool { return s.udpReflector }

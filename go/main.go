@@ -75,7 +75,33 @@ func startTG(ctx context.Context, cfg *Settings) error {
 	}
 
 	authorizer := client.ClientAuthorizer(params)
-	go client.CliInteractor(authorizer)
+	go func() {
+		for state := range authorizer.State {
+			switch state.AuthorizationStateType() {
+			case client.TypeAuthorizationStateWaitPhoneNumber:
+				phone := cfg.PhoneNumber()
+				if phone == "" {
+					fmt.Println("Enter phone number: ")
+					fmt.Scanln(&phone)
+				} else {
+					fmt.Println("Using phone number from settings")
+				}
+				authorizer.PhoneNumber <- phone
+			case client.TypeAuthorizationStateWaitCode:
+				fmt.Println("Enter code: ")
+				var code string
+				fmt.Scanln(&code)
+				authorizer.Code <- code
+			case client.TypeAuthorizationStateWaitPassword:
+				fmt.Println("Enter password: ")
+				var password string
+				fmt.Scanln(&password)
+				authorizer.Password <- password
+			case client.TypeAuthorizationStateReady:
+				return
+			}
+		}
+	}()
 
 	var err error
 	tgClient, err = client.NewClient(authorizer)
