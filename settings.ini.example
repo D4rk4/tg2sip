@@ -42,6 +42,7 @@
 api_id=                         ; Application identifier for Telegram API access
 api_hash=                       ; Application identifier hash for Telegram API access
                                 ; which can be obtained at https://my.telegram.org.
+;phone_number=                  ; Phone number used for Telegram authentication
 
 ;system_language_code=en-US     ; IETF language tag of the user's operating system language
 

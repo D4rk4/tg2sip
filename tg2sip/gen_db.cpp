@@ -180,9 +180,11 @@ private:
                             std::cout << "Confirm this login link on another device: " << state.link_ << std::endl;
                         },
                         [this](td_api::authorizationStateWaitPhoneNumber &) {
-                            std::cout << "Enter phone number: " << std::flush;
-                            std::string phone_number;
-                            std::cin >> phone_number;
+                            std::string phone_number = settings.phone_number();
+                            if (phone_number.empty()) {
+                                std::cout << "Enter phone number: " << std::flush;
+                                std::cin >> phone_number;
+                            }
                             send_query(td_api::make_object<td_api::setAuthenticationPhoneNumber>(phone_number, nullptr),
                                        create_authentication_query_handler());
                         },
