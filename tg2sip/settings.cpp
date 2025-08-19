@@ -48,6 +48,7 @@ Settings::Settings(INIReader &reader) {
     //telegram
     api_id_ = static_cast<int>(reader.GetInteger("telegram", "api_id", 0));
     api_hash_ = reader.Get("telegram", "api_hash", "");
+    phone_number_ = reader.Get("telegram", "phone_number", "");
     db_folder_ = reader.Get("telegram", "database_folder", "");
     system_language_code_ = reader.Get("telegram", "database_folder", "en-US");
     device_model_ = reader.Get("telegram", "device_model", "PC");

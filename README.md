@@ -20,7 +20,7 @@ Your SIP PBX should be comaptible with `L16@48000` or `OPUS@48000` voice codec.
    *  Download universal AppImage package.  
       More information of what is AppImage can be found here https://appimage.org/
       
-2. Obtain `api_id` and `api_hash` tokens from [this](https://my.telegram.org) page and put them in `settings.ini` file.
+2. Obtain `api_id` and `api_hash` tokens from [this](https://my.telegram.org) page and put them in `settings.ini` file. Optionally set `phone_number` to prefill the login prompt.
 3. Login into telegram with `gen_db` app
 4. Set SIP server settings in `settings.ini`
 5. Run `tg2sip`

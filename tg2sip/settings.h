@@ -43,6 +43,7 @@ private:
 
     int api_id_;
     std::string api_hash_;
+    std::string phone_number_;
     std::string db_folder_;
     std::string system_language_code_;
     std::string device_model_;
@@ -113,6 +114,8 @@ public:
     int api_id() const { return api_id_; };
 
     std::string api_hash() const { return api_hash_; };
+
+    std::string phone_number() const { return phone_number_; };
 
     std::string db_folder() const { return db_folder_; };
 
