@@ -451,6 +451,8 @@ func (g *Gateway) handleInvite(req sip.Request, tx sip.ServerTransaction) {
 	g.events <- CallStateEvent{CallID: callID, State: "incoming"}
 	g.internalEvents <- internalEvent{ctxID: callID, typ: evIncoming}
 
+	g.sipClient.TrackInvite(req, tx)
+
 	if tx != nil {
 		g.sipServer.RespondOnRequest(req, statusTrying, "Trying", "", nil)
 	}
