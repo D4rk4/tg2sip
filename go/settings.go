@@ -66,7 +66,7 @@ func LoadSettings(cfg *ini.File) (*Settings, error) {
 	sec = cfg.Section("telegram")
 	s.apiID = sec.Key("api_id").MustInt(0)
 	s.apiHash = sec.Key("api_hash").String()
-	s.dbFolder = sec.Key("database_folder").String()
+	s.dbFolder = sec.Key("database_folder").MustString("/data")
 	s.systemLanguageCode = sec.Key("system_language_code").MustString("en-US")
 	s.deviceModel = sec.Key("device_model").MustString("PC")
 	s.systemVersion = sec.Key("system_version").MustString("Linux")

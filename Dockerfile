@@ -34,6 +34,7 @@ RUN apk upgrade --no-cache && \
 WORKDIR /app
 COPY --from=build /app/go/tg2sip-go /app/go/tg2sip-go
 COPY settings.ini /app/settings.ini
+RUN mkdir -p /data
 WORKDIR /app/go
 EXPOSE 5060/udp
 CMD ["./tg2sip-go"]

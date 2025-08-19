@@ -57,6 +57,9 @@ func startTG(ctx context.Context, cfg *Settings) error {
 	if dataDir == "" {
 		dataDir = filepath.Join(".tdlib")
 	}
+	if err := os.MkdirAll(dataDir, 0700); err != nil {
+		return fmt.Errorf("create data dir: %w", err)
+	}
 
 	params := &client.SetTdlibParametersRequest{
 		UseTestDc:           false,
