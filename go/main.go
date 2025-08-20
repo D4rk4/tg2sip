@@ -38,7 +38,13 @@ func startSIP(ctx context.Context, cfg *Settings) error {
 
 	var listenErr error
 	for i := 0; i <= portRange; i++ {
+		// Explicitly include host in listen address to avoid binding to
+		// the default loopback address when a public address is
+		// detected. When host is empty, fall back to all interfaces.
 		addr := fmt.Sprintf(":%d", port+i)
+		if host != "" {
+			addr = fmt.Sprintf("%s:%d", host, port+i)
+		}
 		listenErr = sipServer.Listen("udp", addr)
 		if listenErr == nil {
 			coreLog.Infof("SIP server listening on %s/udp", addr)
