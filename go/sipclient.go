@@ -55,6 +55,9 @@ func (c *SIPClient) TrackInvite(req sip.Request, tx sip.ServerTransaction) {
 	}
 	if fromHdr != nil && fromHdr.Params != nil {
 		if tag, ok := fromHdr.Params.Get("tag"); ok {
+			if sess.remoteAddr.Params == nil {
+				sess.remoteAddr.Params = sip.NewParams()
+			}
 			sess.remoteAddr.Params = sess.remoteAddr.Params.Add("tag", tag)
 		}
 	}
@@ -134,6 +137,9 @@ func (c *SIPClient) Dial(ctx context.Context, from, to string, headers map[strin
 						if tag, ok := toHdr.Params.Get("tag"); ok {
 							c.mu.Lock()
 							if sess, ok := c.calls[callID]; ok {
+								if sess.remoteAddr.Params == nil {
+									sess.remoteAddr.Params = sip.NewParams()
+								}
 								sess.remoteAddr.Params = sess.remoteAddr.Params.Add("tag", tag)
 							}
 							c.mu.Unlock()
