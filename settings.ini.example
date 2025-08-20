@@ -18,7 +18,8 @@
                         ; 1-errors  3-info      5-verbose debug
 
 [sip]
-;public_address=        ; Address to advertise as the address UDP transport.
+;public_address=        ; Address to advertise as the address UDP transport. If not set,
+                        ; the first non-loopback IPv4 address will be used.
 
 ;stun_server=
 
