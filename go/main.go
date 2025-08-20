@@ -23,6 +23,14 @@ func startSIP(ctx context.Context, cfg *Settings) error {
 	port := cfg.SIPPort()
 	portRange := cfg.SIPPortRange()
 	host := cfg.PublicAddress()
+	if host == "" {
+		if ip, err := detectHostIP(); err != nil {
+			coreLog.Warnf("auto detect address: %v", err)
+		} else {
+			host = ip
+			coreLog.Infof("auto detected address %s", host)
+		}
+	}
 
 	logger := gosiplog.NewLogrusLogger(pjsipLog, "SIP", nil)
 
